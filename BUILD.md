@@ -1,9 +1,12 @@
 # Building mml2mid
 
-This repository is a **fork of mml2mid Version 5.30b** by A.Monden, H.Fujii
-(MKR), H.Kuroda and N.Nide. The original sources came from:
+This repository is an **unofficial fork of mml2mid Version 5.30b** by
+A.Monden, H.Fujii (MKR), H.Kuroda and N.Nide. It is not endorsed by or
+affiliated with them. The original sources came from:
 
 > <https://www.vector.co.jp/soft/dl/unix/art/se102432.html>
+
+The sample songs are not bundled; see `test/README.md`.
 
 64-bit builds for Windows, Linux and macOS. No configuration switches are
 needed — the platform is detected automatically.
@@ -38,6 +41,7 @@ Install with `cmake --install build --prefix /usr/local`.
 cd src
 make
 make check          # compile every sample and compare hashes
+                    # (needs sample/; see test/README.md)
 sudo make install   # PREFIX=/usr/local by default
 ```
 
@@ -49,7 +53,8 @@ sudo make install   # PREFIX=/usr/local by default
 | GCC 10 | Debian x86-64 | builds clean at `-O2 -Wall -Wextra`, 33/33 tests |
 | clang 21 (clang-cl) | Windows x64 | no errors or substantive warnings |
 
-Both full builds produce byte-identical MIDI on all 32 deterministic samples.
+Both full builds produce byte-identical MIDI on all 32 deterministic samples
+of the original distribution.
 
 ## Requirements
 
@@ -68,15 +73,16 @@ now **UTF-8**; the compiler's input data is left alone.
 | --- | --- | --- |
 | `src/*.c`, `src/*.h` | UTF-8 | all non-ASCII was in Japanese comments, so no program text changed |
 | documentation (`org-doc/*.txt`, `doc/*.md`, `src/mml2mid.1`) | UTF-8 | converted with the character sequence verified identical |
-| `sample/*.mml`, `org-doc/tr-rack.mml` | **still EUC-JP** | see below |
+| `org-doc/tr-rack.mml` | **still EUC-JP** | see below |
 | `org-doc/mml2mid.def` | untouched | VZ editor definition file, contains binary |
 | `mmlpp/mmlpp.pl`, `tk/tkmml2mid.tcl` | still EUC-JP | programs, not documentation |
 
 `.mml` files are compiler *input*, not documentation. mml2mid copies string
 bytes straight into SMF meta events (song title, track names), so re-encoding
-a `.mml` changes the bytes of the MIDI it produces — which would break both the
-match against the shipped `.mid` files and the regression baseline. Use the
-`-m` switch to select how strings are interpreted instead.
+a `.mml` changes the bytes of the MIDI it produces. If you bring in the
+original `sample/` to run the regression suite, keep it EUC-JP and unmodified
+or the recorded baseline will not match. Use the `-m` switch to select how
+strings are interpreted instead.
 
 The build files pass `/utf-8` to MSVC and `-finput-charset=UTF-8` to
 GCC/Clang. If you compile by hand with `cl`, pass `/utf-8` or you will get
