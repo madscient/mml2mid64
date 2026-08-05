@@ -61,13 +61,26 @@ Both full builds produce byte-identical MIDI on all 32 deterministic samples.
 
 ## Source encoding
 
-The sources are **UTF-8**. They were EUC-JP; all the non-ASCII content is in
-Japanese comments, so re-encoding changed no program text. The build files pass
-`/utf-8` to MSVC and `-finput-charset=UTF-8` to GCC/Clang. If you compile by
-hand with `cl`, pass `/utf-8` or you will get C4819 warnings.
+The original distribution was EUC-JP throughout. Sources and documentation are
+now **UTF-8**; the compiler's input data is left alone.
 
-Note that the files under `doc/` and the `sample/*.txt` notes are Shift-JIS and
-`sample/*.mml` are EUC-JP; those were left as they are.
+| What | Encoding | Note |
+| --- | --- | --- |
+| `src/*.c`, `src/*.h` | UTF-8 | all non-ASCII was in Japanese comments, so no program text changed |
+| documentation (`*.txt`, `src/mml2mid.1`) | UTF-8 | converted with the character sequence verified identical |
+| `sample/*.mml`, `doc/tr-rack.mml` | **still EUC-JP** | see below |
+| `doc/mml2mid.def` | untouched | VZ editor definition file, contains binary |
+| `mmlpp/mmlpp.pl`, `tk/tkmml2mid.tcl` | still EUC-JP | programs, not documentation |
+
+`.mml` files are compiler *input*, not documentation. mml2mid copies string
+bytes straight into SMF meta events (song title, track names), so re-encoding
+a `.mml` changes the bytes of the MIDI it produces — which would break both the
+match against the shipped `.mid` files and the regression baseline. Use the
+`-m` switch to select how strings are interpreted instead.
+
+The build files pass `/utf-8` to MSVC and `-finput-charset=UTF-8` to
+GCC/Clang. If you compile by hand with `cl`, pass `/utf-8` or you will get
+C4819 warnings.
 
 ## What changed in the modernisation
 
