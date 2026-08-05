@@ -9,6 +9,16 @@
  */
 
 /*
+ *  This tree is a fork of the original mml2mid Version 5.30b, modernised to
+ *  build for 64-bit Windows / Linux / macOS.  Generated MIDI is unchanged.
+ *
+ *  Original sources:
+ *      https://www.vector.co.jp/soft/dl/unix/art/se102432.html
+ *
+ *  See README.md and BUILD.md for what the fork changes.
+ */
+
+/*
  *      file    name            mml2mid.c
  */
 
