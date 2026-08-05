@@ -1,5 +1,10 @@
 # Building mml2mid
 
+This repository is a **fork of mml2mid Version 5.30b** by A.Monden, H.Fujii
+(MKR), H.Kuroda and N.Nide. The original sources came from:
+
+> <https://www.vector.co.jp/soft/dl/unix/art/se102432.html>
+
 64-bit builds for Windows, Linux and macOS. No configuration switches are
 needed — the platform is detected automatically.
 

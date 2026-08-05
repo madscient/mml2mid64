@@ -3,10 +3,28 @@
 MML（Music Macro Language）で書かれたテキストファイルを読み込み、標準MIDIファイル
 （SMF）を出力するコンパイラです。
 
-オリジナルは 門田暁人・藤井秀樹・黒田久泰・新出尚之 の各氏による Version 5.30b
-（1993〜2011年）です。本リポジトリは、そのソースを現代の64bit環境
-（Windows / Linux / macOS）でビルドできるようにモダナイズしたものです。
+## 本リポジトリについて（フォーク元）
+
+**本リポジトリは、オリジナルの mml2mid Version 5.30b からのフォークです。**
+
+オリジナルは 門田暁人・藤井秀樹・黒田久泰・新出尚之 の各氏による作品（1993〜2011年）
+で、本リポジトリはそのソースを現代の64bit環境（Windows / Linux / macOS）で
+ビルドできるようにモダナイズしたものです。
 **生成されるMIDIの内容はオリジナルと変わりません。**
+
+| 項目 | 内容 |
+| --- | --- |
+| フォーク元 | mml2mid Version 5.30b |
+| オリジナル作者 | 門田暁人、藤井秀樹（MKR）、黒田久泰、新出尚之 |
+| 入手元 | <https://www.vector.co.jp/soft/dl/unix/art/se102432.html> |
+| オリジナルのWebページ | `http://hpc.jp/~mml2mid/`（現在はアクセス不可） |
+
+オリジナル配布物に同梱されていたドキュメント（`doc/`）、サンプル曲（`sample/`）、
+プリプロセッサ（`mmlpp/`）、GUIフロントエンド（`tk/`）、および配布物の説明
+（[readme.txt](readme.txt)）は、そのまま同梱してあります。
+
+本フォークでの変更点は「[モダナイズの概要](#モダナイズの概要)」および
+[BUILD.md](BUILD.md) を参照してください。
 
 ## クイックスタート
 
@@ -173,4 +191,7 @@ ctest --test-dir build -C Release   # Windows / Visual Studio
 作成者に帰属します。詳細および免責事項は [doc/copyrigh.txt](doc/copyrigh.txt) を
 参照してください。
 
-オリジナルの配布物の説明は [readme.txt](readme.txt) にあります。
+本リポジトリは上記オリジナル（mml2mid Version 5.30b、入手元:
+<https://www.vector.co.jp/soft/dl/unix/art/se102432.html>）のフォークであり、
+著作権の帰属はオリジナルのまま変わりません。オリジナルの配布物の説明は
+[readme.txt](readme.txt) にあります。
