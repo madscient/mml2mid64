@@ -67,9 +67,9 @@ now **UTF-8**; the compiler's input data is left alone.
 | What | Encoding | Note |
 | --- | --- | --- |
 | `src/*.c`, `src/*.h` | UTF-8 | all non-ASCII was in Japanese comments, so no program text changed |
-| documentation (`*.txt`, `src/mml2mid.1`) | UTF-8 | converted with the character sequence verified identical |
-| `sample/*.mml`, `doc/tr-rack.mml` | **still EUC-JP** | see below |
-| `doc/mml2mid.def` | untouched | VZ editor definition file, contains binary |
+| documentation (`org-doc/*.txt`, `doc/*.md`, `src/mml2mid.1`) | UTF-8 | converted with the character sequence verified identical |
+| `sample/*.mml`, `org-doc/tr-rack.mml` | **still EUC-JP** | see below |
+| `org-doc/mml2mid.def` | untouched | VZ editor definition file, contains binary |
 | `mmlpp/mmlpp.pl`, `tk/tkmml2mid.tcl` | still EUC-JP | programs, not documentation |
 
 `.mml` files are compiler *input*, not documentation. mml2mid copies string
@@ -86,6 +86,12 @@ C4819 warnings.
 
 Behaviour is unchanged — the compiler produces the same MIDI as before (see
 `test/README.md` for the evidence).
+
+Fork changes made *after* the modernisation, including the one MML extension
+(`P`/`X` now take a 0–4 argument selecting the pedal controller), are documented
+separately: [doc/CHANGES.md](doc/CHANGES.md) for the user-visible differences
+from the original, [doc/STATUS.md](doc/STATUS.md) for the change log.
+The original distribution's own documentation is kept verbatim in `org-doc/`.
 
 ### Build system
 

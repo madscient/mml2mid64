@@ -19,12 +19,19 @@ MML（Music Macro Language）で書かれたテキストファイルを読み込
 | 入手元 | <https://www.vector.co.jp/soft/dl/unix/art/se102432.html> |
 | オリジナルのWebページ | `http://hpc.jp/~mml2mid/`（現在はアクセス不可） |
 
-オリジナル配布物に同梱されていたドキュメント（`doc/`）、サンプル曲（`sample/`）、
+オリジナル配布物に同梱されていたドキュメント（`org-doc/`）、サンプル曲（`sample/`）、
 プリプロセッサ（`mmlpp/`）、GUIフロントエンド（`tk/`）、および配布物の説明
 （[readme.txt](readme.txt)）は、そのまま同梱してあります。
 
-本フォークでの変更点は「[モダナイズの概要](#モダナイズの概要)」および
-[BUILD.md](BUILD.md) を参照してください。
+本フォークでの変更点は、次の3つに分けて記載しています。
+
+| ドキュメント | 内容 |
+| --- | --- |
+| [doc/CHANGES.md](doc/CHANGES.md) | **オリジナル版との差分**（エンドユーザー向け。MMLの拡張など） |
+| [doc/STATUS.md](doc/STATUS.md) | 変更履歴（開発側の作業記録） |
+| [BUILD.md](BUILD.md) | ビルド方法とモダナイズの技術的詳細 |
+
+概要は「[モダナイズの概要](#モダナイズの概要)」にもあります。
 
 ## クイックスタート
 
@@ -46,8 +53,10 @@ mml2mid sample.mml
 ```
 
 先頭の `A` がトラック名、`C1` がMIDIチャンネル1の指定、続く `cdefg` が音符です。
-MMLの詳しい書き方は [doc/mml2mid.txt](doc/mml2mid.txt)、コマンド一覧は
-[doc/command.txt](doc/command.txt) を参照してください。
+MMLの詳しい書き方は [org-doc/mml2mid.txt](org-doc/mml2mid.txt)、コマンド一覧は
+[org-doc/command.txt](org-doc/command.txt) を参照してください。これらはオリジナル版
+時点の内容なので、本フォークで拡張した箇所は [doc/CHANGES.md](doc/CHANGES.md) で
+読み替えてください。
 
 ## ビルド
 
@@ -121,7 +130,8 @@ ctest --test-dir build -C Release   # Windows / Visual Studio
 | パス | 内容 |
 | --- | --- |
 | `src/` | ソースプログラムと Makefile |
-| `doc/` | オリジナルのドキュメント類（MMLリファレンス、テクニック集など） |
+| `org-doc/` | **オリジナルのドキュメント類**（MMLリファレンス、テクニック集など。内容は変更していません） |
+| `doc/` | 本フォークのドキュメント（[CHANGES.md](doc/CHANGES.md)、[STATUS.md](doc/STATUS.md)） |
 | `sample/` | サンプル曲のMMLデータと標準MIDIファイル |
 | `test/` | 回帰テスト用のベースラインとスクリプト |
 | `cmake/` | ctest から呼ばれるテスト実行スクリプト |
@@ -130,7 +140,8 @@ ctest --test-dir build -C Release   # Windows / Visual Studio
 
 ## モダナイズの概要
 
-詳細および修正した不具合の一覧は [BUILD.md](BUILD.md) にあります。主な点は次の通りです。
+詳細および修正した不具合の一覧は [BUILD.md](BUILD.md)、時系列の記録は
+[doc/STATUS.md](doc/STATUS.md) にあります。主な点は次の通りです。
 
 ### ビルドシステム
 
@@ -175,6 +186,16 @@ ctest --test-dir build -C Release   # Windows / Visual Studio
 - `<errno.h>` が未インクルードのため `EINTR` の再試行が無効化されていた問題、
   パイプからの読み込みが空になる問題なども修正しました。
 
+### MMLの拡張
+
+生成MIDIを変えないことを原則としていますが、1点だけ機能を追加しています。
+
+- **`P` / `X` コマンドが 0〜4 の引数を取れるようになりました。** ダンパー・ペダル
+  （CC64）に加え、ポルタメント（65）、ソステヌート（66）、ソフト・ペダル（67）、
+  レガート（68）のオン・オフができます。引数を省略すると従来どおりダンパー・ペダル
+  なので、既存のMMLへの影響はありません。詳細は
+  [doc/CHANGES.md](doc/CHANGES.md#mmlの拡張) を参照してください。
+
 ## 文字コードについて
 
 オリジナルの配布物は全体が **EUC-JP** でした。本フォークでは、ソースとドキュメントを
@@ -183,9 +204,9 @@ ctest --test-dir build -C Release   # Windows / Visual Studio
 | 対象 | 文字コード | 備考 |
 | --- | --- | --- |
 | `src/` のソース（`.c` / `.h`） | UTF-8 | 非ASCII文字はすべて日本語コメント内。プログラムの文字列は不変 |
-| ドキュメント（`*.txt`、`src/mml2mid.1`） | UTF-8 | 内容は1文字も変えずに変換済み |
-| `sample/*.mml`、`doc/tr-rack.mml` | **EUC-JP のまま** | 下記の理由により変換しません |
-| `doc/mml2mid.def` | 変更なし | VZエディタ用のバイナリを含む定義ファイル |
+| ドキュメント（`org-doc/*.txt`、`doc/*.md`、`src/mml2mid.1`） | UTF-8 | 内容は1文字も変えずに変換済み |
+| `sample/*.mml`、`org-doc/tr-rack.mml` | **EUC-JP のまま** | 下記の理由により変換しません |
+| `org-doc/mml2mid.def` | 変更なし | VZエディタ用のバイナリを含む定義ファイル |
 | `mmlpp/mmlpp.pl`、`tk/tkmml2mid.tcl` | EUC-JP のまま | ドキュメントではなくプログラム |
 
 ### `.mml` を変換しない理由
@@ -207,7 +228,7 @@ ctest --test-dir build -C Release   # Windows / Visual Studio
 
 本ソフトウェアの著作権は、オリジナルの作者である 門田暁人・藤井秀樹・黒田久泰・
 新出尚之 の各氏に帰属します。サンプル曲（MMLデータ）の著作権は、それぞれのデータ
-作成者に帰属します。詳細および免責事項は [doc/copyrigh.txt](doc/copyrigh.txt) を
+作成者に帰属します。詳細および免責事項は [org-doc/copyrigh.txt](org-doc/copyrigh.txt) を
 参照してください。
 
 本リポジトリは上記オリジナル（mml2mid Version 5.30b、入手元:
