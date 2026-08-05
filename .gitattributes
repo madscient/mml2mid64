@@ -1,0 +1,16 @@
+# Store and check out every file byte-for-byte, with no line-ending
+# translation.  This matters here for three reasons:
+#
+#   * the regression suite compares generated SMF against recorded SHA-256
+#     hashes, so the sample/*.mml inputs must not change between checkouts;
+#   * doc/ and sample/*.txt are legacy Japanese text (Shift-JIS) and
+#     sample/*.mml are EUC-JP -- leave the distributed bytes alone;
+#   * test/run-baseline.sh and src/makefile must keep LF endings to work
+#     under POSIX shells and make, including from WSL on a Windows checkout.
+#
+# Without this, a checkout with core.autocrlf=true would rewrite all of the
+# above to CRLF.
+* -text
+
+# Explicitly binary, so Git never tries to diff or merge them as text.
+*.mid binary
