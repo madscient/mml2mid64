@@ -1,0 +1,16 @@
+bin/
+obj/
+build/
+build-*/
+*.log
+*.tmp
+*.bak
+
+# object files / executables from the in-tree src/makefile build
+*.o
+*.obj
+src/mml2mid
+src/mml2mid.exe
+
+# pre-modernisation sources, kept only as a local reference
+.orig-euc/

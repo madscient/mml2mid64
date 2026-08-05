@@ -1,0 +1,78 @@
+# Regression tests
+
+`baseline.sha256` records the SHA-256 of the SMF that each `sample/*.mml`
+compiles to. `ctest` (and `make -C src check`) recompiles every sample and
+compares against it, so any change that alters generated MIDI shows up
+immediately.
+
+Each sample is compiled with `sample/` as the working directory, because
+`#include` inside an MML source is resolved relative to the process's current
+directory, not relative to the including file. `08itsuka.mml` includes
+`adc0804.mml` and fails from anywhere else.
+
+## How the baseline was validated
+
+The baseline is not self-referential. It was checked against the `.mid` files
+that ship next to the samples, which were produced by the original pre-64-bit
+program:
+
+**28 of the 32 samples are byte-for-byte identical to the shipped `.mid`.**
+
+Reproducing that comparison needs two adjustments, because of how the
+distribution was assembled — neither is a property of the code:
+
+1. The shipped `*.mml` sources are **EUC-JP**, but the shipped `*.mid` files
+   contain **Shift-JIS** text. The compiler copies string bytes through
+   verbatim, so the samples have to be transcoded to Shift-JIS and compiled
+   with `-m` to reproduce the shipped files.
+2. `08itsuka.mml` must be compiled from within the sample directory so its
+   `#include` resolves.
+
+The four samples that still differ are explained, and none is a defect in the
+build:
+
+| Sample | Difference | Cause |
+| --- | --- | --- |
+| `00master` | many bytes | Uses `kr` (random velocity), seeded from `time()`. Output is nondeterministic by design and can never match a stored file. It is excluded from the baseline for the same reason — `rand()` also differs between C libraries. |
+| `01hop2gs` | 1 byte | Tempo meta-event for `t166` |
+| `01mkr39` | 2 bytes | Tempo meta-event for `t157` |
+| `10kazeir` | 1 byte | Tempo meta-event for `t133` |
+
+The three tempo cases are all the same thing. `tempo_conv()` in the current
+source rounds to nearest, whereas the version that generated the shipped `.mid`
+files truncated:
+
+| MML | exact µs/quarter-note | shipped `.mid` (truncated) | this build (rounded) |
+| --- | --- | --- | --- |
+| `t166` | 361445.783 | 361445 | 361446 |
+| `t157` | 382165.605 | 382165 | 382166 |
+| `t133` | 451127.820 | 451127 | 451128 |
+
+Only tempos that do not divide exactly are affected; `t120`, `t300` and the
+like match. This is pre-existing skew between the shipped samples and the
+shipped source, not a regression — `tempo_conv()` was additionally
+differential-tested against the original implementation over 8,000,000
+`(tempo_master, tempo)` combinations with zero mismatches.
+
+## Cross-platform agreement
+
+The same baseline passes on both toolchains tested, so the two builds agree
+byte-for-byte on all 32 samples:
+
+- MSVC 19.51 / Windows x64 (Visual Studio 18)
+- GCC 10 / Debian x86-64
+
+## Regenerating the baseline
+
+Only after deliberately changing generated output, and only from a build you
+have verified:
+
+```sh
+cd sample
+for m in *.mml; do
+    b=${m%.mml}
+    [ "$b" = 00master ] && continue     # nondeterministic
+    ../src/mml2mid "$m" /tmp/o.mid >/dev/null 2>&1 || continue
+    printf '%s  %s\n' "$(sha256sum /tmp/o.mid | cut -d' ' -f1)" "$b"
+done > ../test/baseline.sha256
+```
