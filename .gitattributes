@@ -3,8 +3,8 @@
 #
 #   * org-doc/ holds the original distribution's documentation -- leave those
 #     bytes exactly as distributed;
-#   * test/run-baseline.sh and src/makefile must keep LF endings to work
-#     under POSIX shells and make, including from WSL on a Windows checkout;
+#   * test/*.sh and src/makefile must keep LF endings to work under POSIX
+#     shells and make, including from WSL on a Windows checkout;
 #   * if you drop the original sample/ directory in here to run the regression
 #     suite, its *.mml must stay byte-identical or the recorded SHA-256
 #     baseline will not match.

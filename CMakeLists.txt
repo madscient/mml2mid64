@@ -96,3 +96,23 @@ foreach(_mml IN LISTS _mml_samples)
                    -DOUT=${CMAKE_CURRENT_BINARY_DIR}/testout/${_stem}.mid
                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/RunSampleTest.cmake)
 endforeach()
+
+# ---------------------------------------------------------------------------
+# Track-name tests: compile every test/trackname/*.mml and check the list of
+# tracks it produced against the .trk file beside it.  These MMLs are written
+# for this fork, so unlike the sample suite they are always available.
+# ---------------------------------------------------------------------------
+set(_trknamedir "${CMAKE_CURRENT_SOURCE_DIR}/test/trackname")
+file(GLOB _mml_tracknames "${_trknamedir}/*.mml")
+
+foreach(_mml IN LISTS _mml_tracknames)
+  get_filename_component(_stem "${_mml}" NAME_WE)
+
+  add_test(NAME trackname.${_stem}
+           COMMAND ${CMAKE_COMMAND}
+                   -DMML2MID=$<TARGET_FILE:mml2mid>
+                   -DMMLDIR=${_trknamedir}
+                   -DSTEM=${_stem}
+                   -DOUT=${CMAKE_CURRENT_BINARY_DIR}/testout/trackname-${_stem}.mid
+                   -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/RunTrackNameTest.cmake)
+endforeach()

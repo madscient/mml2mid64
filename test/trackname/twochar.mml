@@ -1,0 +1,8 @@
+; 2文字のトラック名。1文字のトラック名とは別のトラックになる。
+A  C1 o4 l4 cdef
+A0 C2 o4 l4 efga
+A1 C3 o4 l4 gab>c
+Z9 C4 o4 l4 c
+B  C5 o4 l4 d
+1A0 C6 o5 l4 e
+9Z9 C7 o5 l4 f

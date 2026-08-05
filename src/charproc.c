@@ -24,7 +24,7 @@ extern fileptr fp1;
 
 extern int cur_line;           /* 現在のMMLソース上の行番号 */
 extern int tnum; /* トラックを表す 0A 1B 2C などの 0,1,2 */
-extern int talf; /* トラックを表す 0A 1B 2C などの A,B,C */
+extern int talf; /* 0A 1B 2C0 などの A,B,C0 (charproc.hの通し番号) */
 extern int kloop_ptr;          /* ループネスト数 */
 /* --- 以下５行ＭＫＲの追加 */
 extern Fpos_t lastlenpos; /* 最後に音長を書き込んだ場所へのポインタ */
@@ -50,8 +50,6 @@ typedef struct macrostruct {
 static macrostruct *mcrstr;	/* マクロ保存用 */
 #define macros(i) mcrstr[i].mac
 
-int scan_flag; /* used in  int gettrack(void) */
-
 struct {
 	int line, actual_line;
 	char *fname;
@@ -64,6 +62,8 @@ static void getmacro(void);
 static int macro(int, int);
 static int track(int);
 static int gettrack(void);
+static int getsuffix(void);
+static void mark_track_map(int, int, int);
 static int skipts(void);
 static int getnum(void);
 
@@ -670,14 +670,45 @@ static int track(int inner_string_p)
    行頭に空白やタブがあってはいけない．
    トラック名の直後には1個以上の空白がないといけない．
 
+   トラック名は2文字目に数字を付けられる(本フォークでの拡張)．
+   2文字目は '0'〜'9' あるいはワイルドカードの '?'（'0'〜'9'を表す）．
+
+   A0      == 0A0
+   1A0     == 1A0
+   A?      == 0A0 - 0A9
+   ?0      == 0A0 - 0Z0
+   ??      == 0A0 - 0Z9
+   A00B1   == 0A0, 0B1
+   1A02B1  == 1A0, 2B1
+
+   2文字目は，その次の文字が英大文字でも '?' でもない場合にだけトラック名の
+   一部と見なす．そうでなければ次のトラック指定の先頭(従属トラック番号ないし
+   ワイルドカード)と見なす．並列表記との衝突を避けるための規則で，これにより
+   従来の A1B (== 0A, 1B), ?1? (== 0A-0Z, 1A-1Z) などの意味は変わらない．
+
+   A1B     == 0A, 1B      (0A1, 0B にはならない)
+   A0B1    == 0A, 0B1     (0A0, 0B1 にはならない)
+   A10B    == 0A1, 0B     (次が '0' なので '1' は2文字目になる)
+
    トラック名と見なせない場合は、無視する．（エラーは出さない）
 
    現在の行番号が常に cur_line に入る．
 
    */
 
-static int gettrack2(int);
 extern char track_map[];
+
+/* 通し番号talfを表示用のトラック名("A" あるいは "A0")にする */
+const char *trkname_str(int t)
+{
+	static char buf[3];
+	int s = trkname_suffix(t);
+
+	buf[0] = (char)trkname_letter(t);
+	buf[1] = (char)trksuffix2char(s); /* 2文字目が無ければ0 = 終端 */
+	buf[2] = '\0';
+	return buf;
+}
 
  /* Add Nide */
 int alloc_master_step(void)
@@ -773,19 +804,9 @@ static int gettrack(void)
     (主トラックの場合), -3(従属トラックだが対応する主トラックがない) */
 {
 	int code;
-	int i1, i2;
-
-	if(talf == 0 && tnum == 0 && scan_flag == 0){ /* トラックマップの作成 */
-		int talf2;
-
-		scan_flag = 1;
-		for(talf2 = 0; talf2 < 26; talf2++){
-			if(gettrack2(talf2) != -1) track_map[talf2] = 1;
-
-			fseek2(fp1, 0L, SEEK_SET); /* ファイルの先頭に移動 */
-			cur_line = 1; /* add Nide */
-		}
-	}
+	int i1, i2, i3;
+	const int cur_letter = trkname_letter(talf);
+	const int cur_suffix = trksuffix2char(trkname_suffix(talf));
 
 	for(;;){
 		int track_found = 0;
@@ -829,6 +850,8 @@ static int gettrack(void)
 				if(!track_found) mml_err(67);
 				i2 = i1;
 			}
+			 /* トラック名の2文字目(無ければ0) */
+			i3 = (is_upper(i2) || i2 == '?') ? getsuffix() : 0;
 
 			if(i2 == EOF){
 				return -1;
@@ -836,7 +859,8 @@ static int gettrack(void)
 			if(i2 == '\n'){
 				cur_line++;
 			} else
-			if(i2 == talf + 'A' || i2 == '?'){
+			if((i2 == cur_letter || i2 == '?') &&
+			   (i3 == '?' ? cur_suffix != 0 : i3 == cur_suffix)){
 				if(tnum == 0){ /* 主トラック検査 */
 					if(i1 == '0'){ /* 主トラック発見 */
 						master_count++;
@@ -845,10 +869,8 @@ static int gettrack(void)
 						master_step[master_count-1].linenum = cur_line;
 						master_step[master_count].step = -1;
 						return -2;
-					} else { /* 従属トラック発見 */
-						track_map[dtoi(i1) * 32 + talf] = 1;
-						/* 従属トラックマップ作成 */
 					}
+					 /* 従属トラックはbuild_track_map()で記録済み */
 				} else { /* 従属トラック検査 */
 					if(i1 == '0'){ /* 主トラック発見 */
 						master_count++;
@@ -883,57 +905,106 @@ static int gettrack(void)
 					}
 				}
 			} else
-			if(!is_upper(i2)){
+			if(!(is_upper(i2) || i2 == '?')){
 				break;
 			}
+			 /* 一致しなかっただけでトラック指定としては正しいので、同じ行の
+			    残りの並列指定を続けて調べる。'?'も、2文字目のせいで一致
+			    しないこと("?0"を調べていて talf が 0A の場合など)がある */
 		}
 	}
 }
 
-/* トラックマップ作成時に呼ばれる EOF時-1, そうでなければ0返す */
-static int gettrack2(int talf2)
+/*
+   トラック名の2文字目を取ってくる。
+   2文字目がなければ0を返し、読み取り位置は動かさない。
+
+   数字あるいは'?'であっても、その次が英大文字か'?'であれば、それは2文字目
+   ではなく次のトラック指定の先頭(従属トラック番号あるいはワイルドカード)と
+   見なして0を返す。これがないと、従来の "A1B"(== 0A, 1B) や
+   "?1?"(== 0A-0Z, 1A-1Z) といった並列表記の意味が変わってしまう。
+   */
+static int getsuffix(void)
 {
-	int code;
-	int i1, i2;
+	Fpos_t pos, pos2;
+	int c, next;
 
-	for(;;){
-		if(ftell2(fp1)){
-			while((code = getc2(fp1)) != '\n'){
-				if(code == EOF) return -1;
-			}
-			cur_line++;
-		}
+	fgetpos2(fp1, &pos);
+	c = getc2(fp1);
+	if(is_digit(c) || c == '?'){
+		fgetpos2(fp1, &pos2);
+		next = getc2(fp1);
+		fsetpos2(fp1, &pos2);
+		if(!(is_upper(next) || next == '?')) return c;
+	}
+	fsetpos2(fp1, &pos);
+	return 0;
+}
 
-		for(;;){
-			i1 = getc2(fp1);
-			if(i1 == EOF){
-				return -1;
-			} else
-			if(i1 == '\n'){
-				cur_line++; continue;
-			}
+/* 1個のトラック指定を track_map[] に記録する。
+   letterは'A'〜'Z'あるいはワイルドカードの'?'、suffixは'0'〜'9'、
+   ワイルドカードの'?'、あるいは2文字目がない場合の0 */
+static void mark_track_map(int sub, int letter, int suffix)
+{
+	char *map = &track_map[sub * TRKMAP_STRIDE];
+	int l, s;
 
-			if(!is_digit(i1)){ /*0〜?が省略されてる場合*/
-				i2 = i1;
-				i1 = '0';
-			} else {
-				i2 = getc2(fp1);
-			}
-
-			if(i2 == EOF){
-				return -1;
-			} else
-			if(i2 == '\n'){
-				cur_line++;
-			} else
-			if(i2 == talf2 + 'A' || i2 == '?'){
-				if(i1 == '0') return 0;
-			} else
-			if(!is_upper(i2)){
-				break;
-			}
+	for(l = 'A'; l <= 'Z'; l++){
+		if(letter != '?' && letter != l) continue;
+		if(suffix == '?'){ /* '?'は'0'〜'9'を表す。1文字のトラック名は含まない */
+			for(s = 1; s < TRK_SUFFIXES; s++) map[trkname_index(l, s)] = 1;
+		} else {
+			map[trkname_index(l, trkchar2suffix(suffix))] = 1;
 		}
 	}
+}
+
+/*
+   MMLソース全体を1回だけ走査して、どのトラックが存在するかを track_map[] に
+   記録する。ワイルドカードは該当する全トラックの分を立てる。
+   トラック名として解釈できない行は単に読み飛ばす。エラーの報告はここでは
+   行わない(gettrack()が変換時に行う)。
+   */
+void build_track_map(void)
+{
+	Fpos_t pos;
+	int save_line = cur_line;
+	int i, c, sub, letter;
+
+	for(i = 0; i < TRKMAP_SIZE; i++) track_map[i] = 0;
+
+	fgetpos2(fp1, &pos);
+	fseek2(fp1, 0L, SEEK_SET);
+
+	for(;;){
+		for(;;){ /* 1行分のトラック名欄 */
+			c = getc2(fp1);
+			if(c == EOF) goto done;
+			if(c == '\n') break; /* 次の行へ */
+
+			if(is_upper(c) || c == '?'){ /* 0〜9が省略されている場合 */
+				sub = 0;
+				letter = c;
+			} else if(is_digit(c)){
+				sub = dtoi(c);
+				letter = getc2(fp1);
+				if(letter == EOF) goto done;
+				if(letter == '\n') break;
+				if(!(is_upper(letter) || letter == '?')) goto skipline;
+			} else {
+				goto skipline; /* トラック名欄の終わり */
+			}
+			mark_track_map(sub, letter, getsuffix());
+		}
+		continue; /* '\n'まで読んだので、そのまま次の行へ */
+	skipline:
+		while((c = getc2(fp1)) != '\n'){
+			if(c == EOF) goto done;
+		}
+	}
+done:
+	fsetpos2(fp1, &pos);
+	cur_line = save_line;
 }
 
 /*

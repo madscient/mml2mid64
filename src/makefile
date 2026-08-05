@@ -50,6 +50,7 @@ install : all
 # Compile every sample and compare against test/baseline.sha256.
 # See test/README.md for how that baseline was validated.
 check : all
+	@sh ../test/run-trackname.sh ./$(EXE)
 	@sh ../test/run-baseline.sh ./$(EXE)
 
 clean :

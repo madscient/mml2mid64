@@ -6,9 +6,15 @@
 #ifndef MML2MID_MMLPROC_H
 #define MML2MID_MMLPROC_H
 
+#include "charproc.h"	/* NTRKNAME */
+
 int converttrk(void);
 void write_tmap(void);
-#define MAXTRKNUM 64
+
+/* トラックは (従属トラック番号 0〜9) × (トラック名 NTRKNAME 通り) の組み合わせ
+   だけ作られる。これにテンポマップの1本を足したものがSMFに書かれるトラック数の
+   上限。SMFのトラック数フィールドは16ビットなので、65535を超えてはならない。 */
+#define MAXTRKNUM (10 * NTRKNAME + 1)	/* 2861 */
 
 struct keyproc {
 	short onkai;  /* 音階 */

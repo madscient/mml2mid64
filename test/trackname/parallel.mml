@@ -1,0 +1,8 @@
+; オリジナル版からある並列表記。解釈が変わっていないことを確認する。
+ABCDEFG C1 o4 l4 c      ; 主トラック A〜G をまず作る
+AE  C2 o4 l8 d          ; 0A, 0E
+FG  C3 o4 l8 e          ; 0F, 0G
+A1B C4 o4 l8 f          ; 0A, 1B  (0A1, 0B ではない)
+1A2B C5 o4 l8 g         ; 1A, 2B
+1BC2D C6 o4 l8 a        ; 1B, 0C, 2D
+0A1BC2D C7 o4 l8 b      ; 0A, 1B, 0C, 2D
