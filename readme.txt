@@ -1,46 +1,46 @@
 
-�ե����������
+ファイルの説明
 
 
-readme.txt      .... ���Υե�����
-header.txt        .... ���åץ������ѥإå��ե�����
+readme.txt      .... このファイル
+header.txt        .... アップロード用ヘッダファイル
 
-doc �ǥ��쥯�ȥ�  ... �ɥ��������
+doc ディレクトリ  ... ドキュメント類
 
-  00start.txt  ���Ƥ��Ȥ�ĺ�����ؤγ�������
-  copyrigh.txt ����˴ؤ�������
-  chnglog.txt  �С�����󥢥å�����
-  compile.txt  MML2MID�������ץ������Υ���ѥ�����ˡ
-  mml2mid.txt  MML2MID�λȤ���
-  coolgs.txt   MML2MID�Υƥ��˥å�����GS�����ѡ�
-  coolxg.txt   MML2MID�Υƥ��˥å�����XG�����ѡ�
-  coolsg.txt   MML2MID�Υƥ��˥å�����XG����+PLG100-SG�ܡ����ѡ�
-  command.txt  MML���ޥ���ḫɽ
+  00start.txt  初めてお使い頂く方への概要説明
+  copyrigh.txt 著作権に関する注意
+  chnglog.txt  バージョンアップ履歴
+  compile.txt  MML2MIDソースプログラムのコンパイル方法
+  mml2mid.txt  MML2MIDの使い方
+  coolgs.txt   MML2MIDのテクニック集（GS音源用）
+  coolxg.txt   MML2MIDのテクニック集（XG音源用）
+  coolsg.txt   MML2MIDのテクニック集（XG音源+PLG100-SGボード用）
+  command.txt  MMLコマンド早見表
 
-  mmldef.txt   VZ���ǥ����桼���Τ����������
-  mml2mid.def  VZ���ǥ�����def�ե�����
-  tr-rack.mml  KORG TR-Rack�桼���Τ���Υ���ץ�Exclusive
+  mmldef.txt   VZエディタユーザのための説明書
+  mml2mid.def  VZエディタ用defファイル
+  tr-rack.mml  KORG TR-RackユーザのためのサンプルExclusive
 
-bin_dos �ǥ��쥯�ȥ�  ... DOS�Ѽ¹Բ�ǽ�ե�����
+bin_dos ディレクトリ  ... DOS用実行可能ファイル
 
-  mml2mid.exe  MML2MID���Ρ�MS-DOS�Ѽ¹ԥե������
+  mml2mid.exe  MML2MID本体（MS-DOS用実行ファイル）
 
-bin_w32 �ǥ��쥯�ȥ�  ... Win32�Ѽ¹Բ�ǽ�ե�����
+bin_w32 ディレクトリ  ... Win32用実行可能ファイル
 
-  mml2mid.exe  MML2MID���Ρ�Win32���󥽡����Ǽ¹ԥե������
+  mml2mid.exe  MML2MID本体（Win32コンソール版実行ファイル）
 
-sample �ǥ��쥯�ȥ� .... ����ץ벻�ڥǡ���
+sample ディレクトリ .... サンプル音楽データ
 
-  000readme.txt ����ץ�ʥꥹ��
-  *.mml    �ʥǡ�����MML�ǡ�����
-  *.txt    �ʥǡ���������
-  *.mid    �ʥǡ�����ɸ��MIDI�ե������
+  000readme.txt サンプル曲リスト
+  *.mml    曲データ（MMLデータ）
+  *.txt    曲データの説明
+  *.mid    曲データ（標準MIDIファイル）
 
-src �ǥ��쥯�ȥ� .... �������ץ������
+src ディレクトリ .... ソースプログラム
 
-  makefile	��UNIX��makefile
-  makefile.bcc	��BCC��makefile
-  makefile.egc	��Win32���egcs��makefile(Win32���󥽡����Ǥ����)
+  makefile	…UNIX用makefile
+  makefile.bcc	…BCC用makefile
+  makefile.egc	…Win32上のegcs用makefile(Win32コンソール版を作成)
   charproc.c
   charproc.h
   file.asm
@@ -54,24 +54,24 @@ src �ǥ��쥯�ȥ� .... �������ץ������
   note.c
   win.h
 
-mmlpp �ǥ��쥯�ȥ� .... mml2mid�ѥץ�ץ����å�
+mmlpp ディレクトリ .... mml2mid用プリプロセッサ
 
-  mmlpp.pl     ... perl������ץ�
-  mmlppdoc.txt ... �ץ�ץ����å���������
+  mmlpp.pl     ... perlスクリプト
+  mmlppdoc.txt ... プリプロセッサの説明書
 
-tk �ǥ��쥯�ȥ� .... mml2mid�ѥ���ե����롦���󥿥ե�����tkmml2mid
+tk ディレクトリ .... mml2mid用グラフィカル・インタフェースtkmml2mid
 
-  tkmml2mid.tcl ... Tcl/Tk������ץ�
-  tkmml2mid.txt ... tkmml2mid��������
+  tkmml2mid.tcl ... Tcl/Tkスクリプト
+  tkmml2mid.txt ... tkmml2midの説明書
 
 ----------------------------------------------------
-Ϣ���衧
+連絡先：
 
-��ո����������ϡ�������MML2MID Web Page�ˤ���ޤ��䤤��碌�ե�����
-�ޤǤ��󤻲�������
+御意見，質問等は，下記のMML2MID Web Pageにあります問い合わせフォーム
+までお寄せ下さい．
 
-MML2MID Web Page�ϡ� http://hpc.jp/~mml2mid/ �Ǥ����ʤ���UNIX��������
-�����֤ϡ�ftp://hayabusa.ics.nara-wu.ac.jp/pub/nide/misc/mml530b.tgz
-�Ǥ����ۤ��Ƥ��ޤ���(���������ַ�����tar+gzip����������ɥ�����Ȥ�ʸ
-�������ɤ����ܸ�EUC�����ԥ����ɤ�LF�ˤʤäƤ���¾�ϡ���Ͽ���Ƥ�Windows
-�������������֤�Ʊ���ǡ�Windows�Ѥ�DOS�ѤΥХ��ʥ��Ʊ�����Ƥ��ޤ�)
+MML2MID Web Pageは， http://hpc.jp/~mml2mid/ です．なお、UNIX向けアー
+カイブは、ftp://hayabusa.ics.nara-wu.ac.jp/pub/nide/misc/mml530b.tgz
+でも配布しています。(アーカイブ形式がtar+gzip、ソースやドキュメントの文
+字コードが日本語EUC、改行コードがLFになっている他は、収録内容はWindows
+向けアーカイブと同じで、Windows用やDOS用のバイナリも同梱しています)

@@ -46,8 +46,8 @@ mml2mid sample.mml
 ```
 
 先頭の `A` がトラック名、`C1` がMIDIチャンネル1の指定、続く `cdefg` が音符です。
-MMLの詳しい書き方は [doc/mml2mid.txt](doc/mml2mid.txt) を参照してください
-（doc以下のドキュメントはShift-JISです）。
+MMLの詳しい書き方は [doc/mml2mid.txt](doc/mml2mid.txt)、コマンド一覧は
+[doc/command.txt](doc/command.txt) を参照してください。
 
 ## ビルド
 
@@ -177,12 +177,31 @@ ctest --test-dir build -C Release   # Windows / Visual Studio
 
 ## 文字コードについて
 
-- `src/` 以下のソースは **UTF-8** です。元はEUC-JPでしたが、非ASCII文字は
-  すべて日本語コメント内にあり、プログラムの文字列は変わっていません。
-  ビルドファイルはMSVCに `/utf-8`、GCC/Clangに `-finput-charset=UTF-8` を渡します。
-  `cl` を手動で実行する場合は `/utf-8` を付けてください（C4819警告が出ます）。
-- `doc/` 以下と `sample/*.txt` は **Shift-JIS**、`sample/*.mml` は **EUC-JP** のまま
-  変更していません。
+オリジナルの配布物は全体が **EUC-JP** でした。本フォークでは、ソースとドキュメントを
+**UTF-8** に変換し、コンパイラの入力データは元のまま残しています。
+
+| 対象 | 文字コード | 備考 |
+| --- | --- | --- |
+| `src/` のソース（`.c` / `.h`） | UTF-8 | 非ASCII文字はすべて日本語コメント内。プログラムの文字列は不変 |
+| ドキュメント（`*.txt`、`src/mml2mid.1`） | UTF-8 | 内容は1文字も変えずに変換済み |
+| `sample/*.mml`、`doc/tr-rack.mml` | **EUC-JP のまま** | 下記の理由により変換しません |
+| `doc/mml2mid.def` | 変更なし | VZエディタ用のバイナリを含む定義ファイル |
+| `mmlpp/mmlpp.pl`、`tk/tkmml2mid.tcl` | EUC-JP のまま | ドキュメントではなくプログラム |
+
+### `.mml` を変換しない理由
+
+`.mml` はドキュメントではなく**コンパイラへの入力データ**です。mml2mid は文字列中の
+バイトをそのままSMFのメタイベント（曲名・トラック名など）へ書き出すため、`.mml` の
+文字コードを変えると**生成されるMIDIファイルの中身が変わります**。同梱の `.mid` との
+一致も、回帰テストのベースラインも崩れます。
+
+`.mml` 内の日本語を扱う場合は、ソースの文字コードに応じて `-m` オプション
+（文字列中をShift-JISとみなす）を使い分けてください。
+
+### ビルド時の注意
+
+ビルドファイルはMSVCに `/utf-8`、GCC/Clangに `-finput-charset=UTF-8` を渡します。
+`cl` を手動で実行する場合は `/utf-8` を付けてください（付けないとC4819警告が出ます）。
 
 ## 著作権
 
