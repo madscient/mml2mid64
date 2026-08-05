@@ -131,6 +131,7 @@ static void bankselect(void);
 static void progchange(void);
 static void getpanpot(void);
 static void setRT(void);
+static void pedal(int);		/* P, Xコマンドの処理 */
 static void keyoffvelocity(void);
 static void code_M(void);
 void mml_err(int i); /* エラー処理 */
@@ -653,10 +654,10 @@ static void do_command(int code)
 		setpsw();
 		break;
 	case 'P':
-		put_cntchange(64, 127, 0);
+		pedal(127);
 		break;
 	case 'X':
-		put_cntchange(64, 0, 0);
+		pedal(0);
 		break;
 	case 'G':
 		cpres0();
@@ -1726,6 +1727,24 @@ static void detune(void)
 	write_rpn(0, 1, num);
 }
 
+/* P, Xコマンドの処理（ペダル類のオン・オフ）
+   Pn でオン、Xn でオフ。nは省略時0。
+     n=0 … ダンパー・ペダル	(コントロールチェンジ64番)
+     n=1 … ポルタメント		(		 65番)
+     n=2 … ソステヌート		(		 66番)
+     n=3 … ソフト・ペダル	(		 67番)
+     n=4 … レガート		(		 68番)
+   引数onは 127(オン) または 0(オフ) */
+static void pedal(int on)
+{
+	int i, num;
+
+	num = xget(&i);
+	if(i == -2) num = 0; /* 省略時は0（ダンパー・ペダル） */
+	if(num < 0 || 4 < num) mml_err(72);
+	put_cntchange(64 + num, on, 0);
+}
+
 /* RTコマンドの処理 */
 static void setRT(void)
 {
@@ -2234,6 +2253,7 @@ static char *err_msgs[] = {
 	"can't align sub-track (previous sub-track was longer than master track)", /* 70 */
 
 	"exclusive data too long",
+	"pedal 'P?' or 'X?' is wrong",
 };
 
 static char *warn_msgs[] = {
