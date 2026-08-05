@@ -1,9 +1,22 @@
 # Regression tests
 
-`baseline.sha256` records the SHA-256 of the SMF that each `sample/*.mml`
-compiles to. `ctest` (and `make -C src check`) recompiles every sample and
-compares against it, so any change that alters generated MIDI shows up
-immediately.
+There are two suites.
+
+**Samples.** `baseline.sha256` records the SHA-256 of the SMF that each
+`sample/*.mml` compiles to. `ctest` (and `make -C src check`) recompiles every
+sample and compares against it, so any change that alters generated MIDI shows
+up immediately. The samples are not bundled — see below.
+
+**Track names.** `trackname/*.mml` pins down the track-name grammar: the
+parallel notation and wildcards inherited from the original, and the optional
+second character this fork adds (`doc/CHANGES.md`). Each MML is paired with a
+`.trk` file listing the tracks it must produce, in output order; the runner
+also checks the track count in the SMF header. These MMLs were written for this
+fork and carry no third-party content, so this suite always runs.
+
+`trackname/parallel.mml` and `trackname/wildcompat.mml` use nothing but
+original syntax and pass against the original 5.30b as well —
+they are there to catch any drift in what the original could already express.
 
 ## The sample songs are not bundled
 

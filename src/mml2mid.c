@@ -51,13 +51,16 @@ static char *copyright = NULL;	/* 曲の著作権情報 */
 Fpos_t lastlenpos;       /* 最後に音長を書き込んだ場所へのポインタ */
 long lastlen;            /* 最後に書き込んだ音長の値 */
 int tnum; /* パート名．  トラックを表す 0A 1B 2C などの 0,1,2 */
-int talf; /* トラック名．トラックを表す 0A 1B 2C などの A,B,C */
+int talf; /* トラック名．0A 1B 2C0 などの A,B,C0 の部分。値はcharproc.hの通し番号 */
 int trans = 0; /* オプションスイッチTによる転調値 */
 int x68k = 0;  /* <, > を逆にするスイッチ */
 int x68k2 = 0; /* (, ) を逆にするスイッチ */
 int german_scale = 0; /* 音名をドイツ流のCDEFGAHにするスイッチ */
-char track_map[320];	/* MKR追加 */
+char track_map[TRKMAP_SIZE];	/* MKR追加 */
 int backcompati;
+
+ /* SMFのトラック数フィールドは16ビットなので、それを超えてはならない */
+typedef char mml2mid_maxtrknum_fits_in_smf[MAXTRKNUM <= 65535 ? 1 : -1];
 
 MML_NORETURN static void sw(void);
 
@@ -441,9 +444,9 @@ static void smfheader(fileptr fp, int i) /* SMFのヘッダを出力する */
 	putc2(6, fp);
 	putc2(0, fp);
 	putc2(i, fp);   /* format 0 or 1 */
-	putc2(0, fp);
 	fgetpos2(fp, &trkno);
-	putc2(1, fp);  /* トラック数(最初は1を書いておく) */
+	putc2(0, fp);  /* トラック数(16ビット。最初は1を書いておく) */
+	putc2(1, fp);
 	putc2((char)(timebase >> 8), fp); /* timebase */
 	putc2((char)timebase, fp);
 }
@@ -494,7 +497,6 @@ static void puttitle(const char *title, const char *copyright)
 	fputs2(copyright, fp3);
 }
 
-extern int scan_flag; /* used in  long gettrack(void) */
 extern int ichi; /* =1 があったかどうかのフラグ */
 extern int tempo_master;
 
@@ -514,10 +516,8 @@ extern int alloc_tmap(void), alloc_master_step(void),
   */
 static void analyze(void)
 {
-	int i;
 	timebase = 48;		/* タイムベース初期値 */
 	trknum = 0;		/* トラック数 */
-	scan_flag = 0;
 	ichi = 0;
 
 	/* alloc data area */
@@ -557,18 +557,19 @@ static void analyze(void)
 	trktop[0] = tposize + 4;	/* テンポマップのヘッダの直後の位置 */
 
 
-	for(i = 0; i < numberof(track_map); i++) track_map[i]=0;
+	build_track_map(); /* どのトラックが存在するかを1回の走査で調べておく */
 
-	for(talf = 0; talf < 26; talf++){
-		if (talf>0 && track_map[talf]==0 && track_map[26]==0) continue;
-		tnum=0; /* 主トラック0[A〜Z]をまずチェックする */
+	for(talf = 0; talf < NTRKNAME; talf++){
+		if (talf>0 && track_map[talf]==0 && track_map[TRKMAP_WILD]==0) continue;
+		tnum=0; /* 主トラック0[A〜Z][0〜9]をまずチェックする */
 		clear_master_step();
 		fseek2(fp1, 0L, SEEK_SET); /* ファイルの先頭に移動 */
-		if(converttrk() != -1){ /* 主トラック0[A〜Z]が存在する場合 */
+		if(converttrk() != -1){ /* 主トラックが存在する場合 */
 			smftrkend(fp2, &trksize); /* トラックの終了イベント出力 */
 			trktop[trknum] = trksize + 4; /* ヘッダの直後の位置 */
 			for (tnum=1;tnum < 10 ; tnum++) {
-				if(track_map[tnum*32+talf]==0 && track_map[tnum*32+26]==0)
+				if(track_map[tnum*TRKMAP_STRIDE+talf]==0 &&
+				   track_map[tnum*TRKMAP_STRIDE+TRKMAP_WILD]==0)
 					continue; /* 従属トラックが存在しない */
 				fseek2(fp1, 0L, SEEK_SET); /* ファイルの先頭に移動 */
 				if(converttrk() != -1){
@@ -583,11 +584,12 @@ static void analyze(void)
 	smftrkend(fp3, &tposize); /* テンポトラックの終了イベント出力 */
 	fsetpos2(fp3, &trkno);	  /* トラック数を書き込む場所に移動する */
 	trknum++;		  /* トラック数にテンポマップの分を足す */
-	if(trknum >= MAXTRKNUM){
+	if(trknum > MAXTRKNUM){
 		fprintf(STDERR, "ERROR! Too many tracks\n");
 		remove_file_and_owari();
 	}
-	putc2(trknum, fp3);		/* トラック数を書き込む */
+	putc2((char)(trknum >> 8), fp3); /* トラック数を書き込む */
+	putc2((char)trknum, fp3);
 	/* fseek2(fp3, 2L, SEEK_CUR); */ /* タイムベースの分をスキップする */
 	if(fmat == 0){
 		format1to0();
@@ -1036,8 +1038,9 @@ static void format1to0(void)
 {
 	int i;
 	int tr; /* 現在変換中のトラック */
-	long ctrk[MAXTRKNUM]; /* 各トラックの処理中のイベントのステップタイム */
-	int endsw[MAXTRKNUM];
+	 /* MAXTRKNUM分あるのでスタックには置かない */
+	static long ctrk[MAXTRKNUM]; /* 各トラックの処理中のイベントのステップタイム */
+	static int endsw[MAXTRKNUM];
 	long j; /* 汎用 */
 	int code;
 	int hend = 0; /* 変換済みトラックの個数 */

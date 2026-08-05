@@ -25,7 +25,7 @@ extern int timebase;      /* タイムベース 48,60,80,96,120,160,240,480 */
 extern int trknum;        /* トラック数 */
 extern Fpos_t trksize;    /* トラックサイズを書き込む場所 */
 extern int tnum;          /* トラックを表す 0A 1B 2C などの 0,1,2 */
-extern int talf;          /* トラックを表す 0A 1B 2C などの A,B,C */
+extern int talf;          /* 0A 1B 2C0 などの A,B,C0 (通し番号) */
 extern Fpos_t lastlenpos; /* 最後に音長を書き込んだ場所へのポインタ */
 extern long lastlen;      /* 最後に書き込んだ音長の値 */
 extern int x68k;
@@ -2309,7 +2309,7 @@ void mml_err(int i)
 
 void write_header(void)
 {
-	msg_printf("trk %d%c: ", tnum, talf + 'A');
+	msg_printf("trk %d%s: ", tnum, trkname_str(talf));
 	text_cat(Msg);
 	if(++trknum >= MAXTRKNUM) mml_err(60);
 	smftrkheader(fp2, &trksize);

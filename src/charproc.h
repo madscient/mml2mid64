@@ -45,6 +45,33 @@ struct master_step {
 	int linenum;
 };
 
+/* ---- トラック名 -------------------------------------------------------
+   トラック名は「[A-Z]」または「[A-Z][0-9]」の1〜2文字。内部ではこれを
+   0 〜 NTRKNAME-1 の通し番号(talf)で表す。
+
+	talf = (1文字目 - 'A') * TRK_SUFFIXES + 2文字目コード
+
+   2文字目コードは、2文字目が無い場合が0、'0'〜'9'が1〜10。よって
+   talf == 0 は従来どおりトラック「A」を表す。 */
+#define TRK_SUFFIXES 11
+#define NTRKNAME (26 * TRK_SUFFIXES)		/* 286 */
+#define trkname_letter(t) ((t) / TRK_SUFFIXES + 'A')
+#define trkname_suffix(t) ((t) % TRK_SUFFIXES)	/* 0ならトラック名は1文字 */
+#define trkname_index(c, s) (((c) - 'A') * TRK_SUFFIXES + (s))
+ /* 2文字目コードと実際の文字との変換。文字が無い場合は0 */
+#define trksuffix2char(s) ((s) ? '0' + (s) - 1 : 0)
+#define trkchar2suffix(c) ((c) ? (c) - '0' + 1 : 0)
+
+/* track_map[]は従属トラック番号(0〜9)ごとにTRKMAP_STRIDE個の枠を持つ。
+   最後の1枠はワイルドカード用の予約(オリジナル版から引き継いだもので、
+   現在は常に0のまま) */
+#define TRKMAP_STRIDE (NTRKNAME + 1)
+#define TRKMAP_WILD NTRKNAME
+#define TRKMAP_SIZE (10 * TRKMAP_STRIDE)
+
+const char *trkname_str(int);
+void build_track_map(void);
+
 #define mml_warn(i) mml_err(-(i))
 
 #endif /* MML2MID_CHARPROC_H */
