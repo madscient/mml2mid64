@@ -1,12 +1,13 @@
 # Store and check out every file byte-for-byte, with no line-ending
 # translation.  This matters here for three reasons:
 #
-#   * the regression suite compares generated SMF against recorded SHA-256
-#     hashes, so the sample/*.mml inputs must not change between checkouts;
-#   * org-doc/ and sample/*.txt are legacy Japanese text (Shift-JIS) and
-#     sample/*.mml are EUC-JP -- leave the distributed bytes alone;
+#   * org-doc/ holds the original distribution's documentation -- leave those
+#     bytes exactly as distributed;
 #   * test/run-baseline.sh and src/makefile must keep LF endings to work
-#     under POSIX shells and make, including from WSL on a Windows checkout.
+#     under POSIX shells and make, including from WSL on a Windows checkout;
+#   * if you drop the original sample/ directory in here to run the regression
+#     suite, its *.mml must stay byte-identical or the recorded SHA-256
+#     baseline will not match.
 #
 # Without this, a checkout with core.autocrlf=true would rewrite all of the
 # above to CRLF.

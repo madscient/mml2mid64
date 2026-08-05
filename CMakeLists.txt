@@ -49,8 +49,13 @@ endif()
 
 # ---------------------------------------------------------------------------
 # Regression tests: compile every sample/*.mml and compare the output against
-# the SHA-256 recorded in test/baseline.sha256.  See test/README.md for how
-# that baseline was validated against the .mid files shipped with the samples.
+# the SHA-256 recorded in test/baseline.sha256.
+#
+# The sample songs are NOT bundled with this fork -- they are third-party works
+# with their own copyright holders (see README).  Drop the sample/ directory
+# from the original mml2mid 5.30b archive in here to enable the suite; without
+# it the build is fine, there is simply nothing to test.  test/README.md has
+# the details, including how the baseline was validated.
 # ---------------------------------------------------------------------------
 enable_testing()
 
@@ -63,6 +68,13 @@ if(EXISTS "${_baseline}")
 endif()
 
 file(GLOB _mml_samples "${_sampledir}/*.mml")
+
+if(NOT _mml_samples)
+  message(STATUS
+    "mml2mid: no sample/*.mml found -- regression tests disabled. "
+    "See test/README.md to enable them.")
+endif()
+
 foreach(_mml IN LISTS _mml_samples)
   get_filename_component(_stem "${_mml}" NAME_WE)
 

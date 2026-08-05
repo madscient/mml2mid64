@@ -18,6 +18,12 @@ if [ ! -x "$exe" ]; then
 	echo "no such executable: $exe" >&2
 	exit 2
 fi
+if [ ! -d "$root/sample" ]; then
+	echo "sample/ is not present, so there is nothing to check." >&2
+	echo "The sample songs are third-party works and are not bundled with" >&2
+	echo "this fork; see test/README.md for how to restore them." >&2
+	exit 2
+fi
 # Absolute, because each sample is compiled with sample/ as the working dir.
 exe=$(cd "$(dirname "$exe")" && pwd)/$(basename "$exe")
 

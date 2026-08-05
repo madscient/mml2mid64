@@ -5,6 +5,27 @@ compiles to. `ctest` (and `make -C src check`) recompiles every sample and
 compares against it, so any change that alters generated MIDI shows up
 immediately.
 
+## The sample songs are not bundled
+
+**`sample/` is not part of this fork.** The sample songs are third-party works:
+their copyright belongs to each individual composer, and only the pieces by
+A.Monden carry a free-use grant. This fork therefore does not redistribute
+them. See the copyright section of the top-level `README.md`.
+
+Without `sample/`, the build works normally and the test suite is simply
+disabled — CMake prints a status line saying so.
+
+To enable the suite, fetch the original mml2mid 5.30b archive and copy its
+`sample/` directory into the root of this tree:
+
+> <https://www.vector.co.jp/soft/dl/unix/art/se102432.html>
+
+`baseline.sha256` is kept in the repository so the comparison still works when
+you do. It expects the samples exactly as distributed — EUC-JP encoded and
+byte-for-byte unmodified.
+
+## How the tests run
+
 Each sample is compiled with `sample/` as the working directory, because
 `#include` inside an MML source is resolved relative to the process's current
 directory, not relative to the including file. `08itsuka.mml` includes
