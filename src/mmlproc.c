@@ -132,6 +132,7 @@ static void progchange(void);
 static void getpanpot(void);
 static void setRT(void);
 static void pedal(int);		/* P, Xコマンドの処理 */
+static void code_Y(void);	/* Yコマンドの処理（モノモード） */
 static void keyoffvelocity(void);
 static void code_M(void);
 void mml_err(int i); /* エラー処理 */
@@ -643,6 +644,9 @@ static void do_command(int code)
 		break;
 	case 'y':
 		code_y();
+		break;
+	case 'Y':
+		code_Y();
 		break;
 	case 't':
 		tempo();
@@ -1776,6 +1780,21 @@ static void pedal(int on)
 	put_cntchange(64 + num, on, 0);
 }
 
+/* Yコマンドの処理（モノモード・オン／ポリモード・オン）
+   Yn でコントロールチェンジ126番（Mono Mode On）nを送出。nは省略時1。
+     n=0 の場合は例外的にコントロールチェンジ127番（Poly Mode On）0を送出する。
+   引数nの範囲は0〜127。 */
+static void code_Y(void)
+{
+	int i, num;
+
+	num = xget(&i);
+	if(i == -2) num = 1; /* 省略時は1 */
+	if(num < 0 || 127 < num) mml_err(74);
+	if(num == 0) put_cntchange(127, 0, 0);
+	else put_cntchange(126, num, 0);
+}
+
 /* RTコマンドの処理 */
 static void setRT(void)
 {
@@ -2286,6 +2305,7 @@ static char *err_msgs[] = {
 	"exclusive data too long",
 	"pedal 'P?' or 'X?' is wrong",
 	"program change '@(?,?,?)' is wrong",
+	"mono mode 'Y?' is wrong",
 };
 
 static char *warn_msgs[] = {
