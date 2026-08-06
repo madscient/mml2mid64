@@ -22,6 +22,7 @@ struct local_note_vars {
 #define OTO_A_CMD 010
 	int velocity;	/* localなvelocity */
 	int gatetime;	/* localなgatetime */
+	int gatetime_explicit; /* gatetimeがn2として明示されたか(#ampasandtie on用) */
 	int koff;	/* localなキーオフベロシティ */
 };
 
@@ -34,6 +35,7 @@ extern int length(void);
 extern int xget(int *);
 extern int trans;
 extern int german_scale, backcompati;
+extern int ampasandtie;
 
 /* mmlproc.c からの extern */
 extern long tstep;	/* トラックの現在のステップタイム */
@@ -61,6 +63,7 @@ extern int check_cntchange(int, int);
 extern int check_bendchange(int);
 extern void mml_err(int);
 extern int psw;
+extern void legato_switch(int); /* mmlproc.cのpedal()と同じCC#68を送出する */
 
 /* 98.3.6 追加 */
 /* U指定時に last=first=0
@@ -93,6 +96,8 @@ void note(int); /* 音符、休符処理*/
 void note_r_noflush(void); /* `r の処理 */
 void note_off_specific(int); /* `<音名> の処理 */
 static void note_impl(int, int);
+static void emit_note(struct local_note_vars *, int, int, int, int, int);
+static void note_tie_entry(int); /* #ampasandtie on の下での&チェーン処理 */
 void setcode_U(int, int);
 void setcode_F(int, int, int);
 void setcode_I(int, int, int);
@@ -407,9 +412,13 @@ static void get_note_values(int code, struct local_note_vars *vars)
 
 			(void)getbyte(2);
 			num = xget(&i);
-			if(i != -2) vars->gatetime = num;
+			if(i != -2){
+				vars->gatetime = num;
+				vars->gatetime_explicit = 1;
+			}
 			else{
 				vars->gatetime = gatetimetmp; /* 値の省略 */
+				vars->gatetime_explicit = 0;
 			}
 			if(getbyte(1) == ','){
 				(void)getbyte(2);
@@ -419,11 +428,13 @@ static void get_note_values(int code, struct local_note_vars *vars)
 			}
 		}else{
 			vars->gatetime = gatetimetmp;
+			vars->gatetime_explicit = 0;
 			vars->koff = koff;
 		}
 	}else{
 		vars->velocity = velocity;
 		vars->gatetime = gatetimetmp;
+		vars->gatetime_explicit = 0;
 		vars->koff = koff;
 	}
 	if(vars->oto == 0 && psw == 0){
@@ -435,6 +446,10 @@ static void get_note_values(int code, struct local_note_vars *vars)
 /* 音符、休符，\の処理 */
 void note(int code)
 {
+	if(ampasandtie){
+		note_tie_entry(code);
+		return;
+	}
 	note_impl(code, 0);
 }
 
@@ -448,11 +463,7 @@ void note_r_noflush(void)
 
 static void note_impl(int code, int no_flush)
 {
-	int i;
-	long j;
-	int gt;
-	long p = 0;
-	int preandflag, minst_ptr;
+	int preandflag;
 	struct local_note_vars local;
 
 	/* mmlproc_ptr = 0; */ /* ここで 0 にするとやばい */
@@ -487,6 +498,27 @@ static void note_impl(int code, int no_flush)
 	} else {
 		andflag = 0;
 	}
+
+	emit_note(&local, preandflag, andflag, no_flush, 0, 0);
+}
+
+/* note_impl()から発音・ノートオフの出力部分を抽出したもの(#ampasandtie on の
+   note_tie_entry()と共用するため)。挙動はnote_impl()時代と同じ。
+   legato_before_off_on/offは、#ampasandtie on の下で「異音への&チェーン」の
+   先頭/末尾ノートのノートオフ直前にレガートCC(#68)を挿入するためのフラグ。
+   通常の(#ampasandtie offの)呼び出しでは常に0。 */
+static void emit_note(struct local_note_vars *localp, int preandflag,
+                       int andflag_now, int no_flush,
+                       int legato_before_off_on, int legato_before_off_off)
+{
+	int i;
+	long j;
+	int gt;
+	long p = 0;
+	int minst_ptr;
+	struct local_note_vars local = *localp;
+
+	andflag = andflag_now;
 
 	if(psw != 0) return;
 
@@ -594,6 +626,8 @@ static void note_impl(int code, int no_flush)
 			write_length(p + j, fp2);
 			/* p = 0; ←入れなくても良い */
 			if(!(local.oto & OTO_KYUFU)){ /* 休符の時 */
+				if(legato_before_off_on) legato_switch(1);
+				if(legato_before_off_off) legato_switch(0);
 				noteoff(local.onkai, local.koff);
 				write_length(0, fp2);
 			}
@@ -638,6 +672,121 @@ static void note_impl(int code, int no_flush)
 		mmlproc[i].st -= p + j + local.oncho - local.gatetime;
 	}
 	*/
+}
+
+/* note_tie_entry()の下請け。tie_segs/tie_logicalをn個以上入る大きさに保つ */
+static struct local_note_vars *tie_segs;
+static struct local_note_vars *tie_logical;
+static int tie_segs_amount;
+
+static void tie_ensure_capacity(int need)
+{
+	if(need <= tie_segs_amount) return;
+	tie_segs_amount = need + 64;
+	tie_segs = realloc(tie_segs, tie_segs_amount * sizeof(*tie_segs));
+	tie_logical = realloc(tie_logical, tie_segs_amount * sizeof(*tie_logical));
+	if(tie_segs == NULL || tie_logical == NULL) mml_err(61);
+}
+
+/* #ampasandtie on の下での&チェーンの処理(doc/CHANGES.md参照)。note()から、
+   コード'a'〜'h','r','\\','K','A'に対して呼ばれる(K/Aは&チェーンに参加しない
+   ので、そのままnote_impl()に委譲する)。
+
+   &で繋がれた音符・休符のトークン列をすべて読み進めて集めたあと、
+   「休符はノートオフを伴わないステップ消費として扱い、音高比較は休符を除いた
+   前後の実音符同士で行う」というルールで論理ノート列を組み立てる:
+     - 休符: 直前に開いている論理ノートがあればその音長に加算する
+       (ノートオフを挟まずに音を伸ばす)。まだ無ければ、最初の実音符の
+       開始を遅らせる先頭の無音区間として扱う。
+     - 実音符: 直前の論理ノートと同じ音高(compute_onkai()後の値)なら
+       音長を合算する(音を再送しない、真のタイ)。異なる音高なら新しい
+       論理ノートとして追加する。
+   論理ノートが2個以上できた場合だけ、先頭の論理ノートのノートオフ直前に
+   レガートON、末尾の論理ノートのノートオフ直前にレガートOFFを挿入する
+   (CC#68。P4/X4と同じ)。 */
+static void note_tie_entry(int code)
+{
+	int n, nlogical, i;
+	int entry_preandflag;
+	long lead_oncho = 0;
+	int have_lead = 0;
+
+	if(code == 'K' || code == 'A'){
+		note_impl(code, 0);
+		return;
+	}
+
+	entry_preandflag = andflag;
+
+	tie_ensure_capacity(1);
+	get_note_values(code, &tie_segs[0]);
+	n = 1;
+	while(getbyte(1) == '&'){
+		(void)getbyte(2);
+		tie_ensure_capacity(n + 1);
+		code = getbyte(0);
+		if(code == 'K' || code == 'A') mml_err(76);
+		get_note_values(code, &tie_segs[n]);
+		n++;
+	}
+
+	nlogical = 0;
+	for(i = 0; i < n; i++){
+		struct local_note_vars *seg = &tie_segs[i];
+
+		if(seg->oto & OTO_KYUFU){
+			if(nlogical == 0){
+				lead_oncho += seg->oncho;
+				have_lead = 1;
+			} else {
+				tie_logical[nlogical-1].oncho += seg->oncho;
+			}
+			continue;
+		}
+		if(nlogical > 0 && tie_logical[nlogical-1].onkai == seg->onkai){
+			tie_logical[nlogical-1].oncho += seg->oncho;
+			tie_logical[nlogical-1].gatetime = seg->gatetime;
+			tie_logical[nlogical-1].gatetime_explicit =
+				seg->gatetime_explicit;
+			tie_logical[nlogical-1].koff = seg->koff;
+		} else {
+			tie_logical[nlogical] = *seg;
+			nlogical++;
+		}
+	}
+
+	if(nlogical == 0){
+		/* &で繋がれた休符だけの並び。まとめてステップだけ進める
+		   (和音が無ければ通常のrと同じく何もしない) */
+		if(have_lead && lead_oncho > 0){
+			struct local_note_vars restv = tie_segs[n-1];
+			restv.oncho = lead_oncho;
+			emit_note(&restv, entry_preandflag, 0, 0, 0, 0);
+		}
+		return;
+	}
+
+	if(have_lead && lead_oncho > 0){
+		/* 先頭の休符ぶん、最初の実音符の発音開始を遅らせる */
+		struct local_note_vars restv = tie_segs[0];
+		restv.oncho = lead_oncho;
+		emit_note(&restv, entry_preandflag, 0, 0, 0, 0);
+		entry_preandflag = 1; /* F/I等のランプ処理を継続扱いにする */
+	}
+
+	for(i = 0; i < nlogical; i++){
+		int pf = (i == 0) ? entry_preandflag : 1;
+		int lon = (nlogical > 1 && i == 0);
+		int loff = (nlogical > 1 && i == nlogical - 1);
+		struct local_note_vars *ln = &tie_logical[i];
+
+		if(!ln->gatetime_explicit){
+			ln->gatetime = gatetime + ln->oncho * (8 - gatetimeQ) / 8;
+		}
+		if((lon || loff) && ln->gatetime < 0) mml_err(77);
+
+		emit_note(ln, pf, 0, 0, lon, loff);
+	}
 }
 
 /* `<音名> の処理: ノートオンは一切生成せず、keyproc[]で発音中とされている

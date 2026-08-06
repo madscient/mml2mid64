@@ -1799,6 +1799,14 @@ static void pedal(int on)
 	put_cntchange(64 + num, on, 0);
 }
 
+/* #ampasandtie on の下で、&によるレガート(タイ/スラー)のためにコントロール
+   チェンジ68番(P4/X4のレガート・ペダルと同じ)を送出する。note.cから呼ばれる。
+   引数onは真偽値(0以外でオン)。 */
+void legato_switch(int on)
+{
+	put_cntchange(68, on ? 127 : 0, 0);
+}
+
 /* Yコマンドの処理（モノモード・オン／ポリモード・オン）
    Yn でコントロールチェンジ126番（Mono Mode On）nを送出。nは省略時1。
      n=0 の場合は例外的にコントロールチェンジ127番（Poly Mode On）0を送出する。
@@ -2326,6 +2334,9 @@ static char *err_msgs[] = {
 	"program change '@(?,?,?)' is wrong",
 	"mono mode 'Y?' is wrong",
 	"backquote note off '`?' has no matching sounding note",	/* 75 */
+	"'&' tie/slur chain cannot contain 'K' or 'A' (#ampasandtie on)",
+	"'&' tie/slur chain boundary cannot use a negative local gatetime"
+	  " (#ampasandtie on)",
 };
 
 static char *warn_msgs[] = {
