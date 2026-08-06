@@ -138,6 +138,9 @@ static void pedal(int);		/* P, Xコマンドの処理 */
 static void code_Y(void);	/* Yコマンドの処理（モノモード） */
 static void keyoffvelocity(void);
 static void code_M(void);
+static void code_m(void); /* mが来たときの処理 (mv, mt) */
+static void mastervolume(void);	/* mvコマンド処理 */
+static void masterfinetune(void);	/* mtコマンド処理 */
 void mml_err(int i); /* エラー処理 */
 static void code_F(void);
 static void code_U(void);
@@ -600,6 +603,9 @@ static void do_command(int code)
 		break;
 	case 'M':
 		code_M();
+		break;
+	case 'm':
+		code_m();
 		break;
 	case 'a':
 	case 'b':
@@ -2047,6 +2053,65 @@ static void code_M(void)
 	}
 }
 
+/* mv, mt の処理 */
+static void code_m(void)
+{
+	switch(getbyte(1)){
+	case 'v':
+		(void)getbyte(2);
+		mastervolume();
+		break;
+	case 't':
+		(void)getbyte(2);
+		masterfinetune();
+		break;
+	default:
+		mml_err(79);
+	}
+}
+
+/* mvコマンド処理（GM2 Master Volumeユニバーサル・リアルタイムSysEx送出）
+   mvn … nは0〜127。F0 7F 7F 04 01 ll mm F7 を送出する(mm=n, ll=0)。 */
+static void mastervolume(void)
+{
+	int i, num;
+
+	num = xget(&i);
+	if(i == -2 || num < 0 || 127 < num) mml_err(80);
+	putc2(0xf0, fp2);
+	putc2(7, fp2);
+	putc2(0x7f, fp2);	/* Universal Real Time */
+	putc2(0x7f, fp2);	/* device ID: All Devices */
+	putc2(0x04, fp2);	/* sub ID#1: Device Control */
+	putc2(0x01, fp2);	/* sub ID#2: Master Volume */
+	putc2(0, fp2);		/* LSB */
+	putc2(num, fp2);	/* MSB */
+	putc2(0xf7, fp2);
+	write_length(0, fp2);
+}
+
+/* mtコマンド処理（GM2 Master Fine Tuningユニバーサル・リアルタイムSysEx送出）
+   mtn … nは-8192〜8191。0x2000を加算して0〜16383(14bit)に正規化し、
+   F0 7F 7F 04 03 ll mm F7 を送出する。 */
+static void masterfinetune(void)
+{
+	int i, num;
+
+	num = xget(&i);
+	if(i == -2 || num < -8192 || 8191 < num) mml_err(81);
+	num += 0x2000;
+	putc2(0xf0, fp2);
+	putc2(7, fp2);
+	putc2(0x7f, fp2);		/* Universal Real Time */
+	putc2(0x7f, fp2);		/* device ID: All Devices */
+	putc2(0x04, fp2);		/* sub ID#1: Device Control */
+	putc2(0x03, fp2);		/* sub ID#2: Master Fine Tuning */
+	putc2(num & 0x7f, fp2);	/* LSB */
+	putc2((num >> 7) & 0x7f, fp2);	/* MSB */
+	putc2(0xf7, fp2);
+	write_length(0, fp2);
+}
+
 /* 音長の取得 */
 int length(void)
 {
@@ -2364,6 +2429,9 @@ static char *err_msgs[] = {
 	"'&'/'~' chain boundary cannot use a negative local gatetime",
 	"backquote portamento source note '`?' cannot take a length or"
 	  " comma argument",
+	"no such a command 'm?'",
+	"master volume 'mv?' is wrong",	/* 80 */
+	"master fine tune 'mt?' is wrong",
 };
 
 static char *warn_msgs[] = {
