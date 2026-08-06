@@ -14,3 +14,4 @@ src/mml2mid.exe
 
 # pre-modernisation sources, kept only as a local reference
 .orig-euc/
+.orig-sample/
