@@ -235,6 +235,18 @@ static void options(char *opt, int *argcp, char ***argvp)
 
 static char stdio_name[] = "-";
 
+/* UTF-8ソースの先頭にBOM(EF BB BF)が付いていたら読み飛ばす。トラック名の
+   1文字目としてBOMのバイト列が来るとgettrack()が即座にエラーになるため。 */
+static void skip_utf8_bom(fileptr fp)
+{
+	if(fp->end_adr - fp->top_adr >= 3 &&
+	   (unsigned char)fp->top_adr[0] == 0xef &&
+	   (unsigned char)fp->top_adr[1] == 0xbb &&
+	   (unsigned char)fp->top_adr[2] == 0xbf){
+		fseek2(fp, 3, SEEK_SET);
+	}
+}
+
 int main(int argc, char *argv[])
 {
 	char *srcfile, *base;
@@ -319,6 +331,7 @@ int main(int argc, char *argv[])
 		fprintf(STDERR, "ERROR! Unable to open %s\n", srcfile);
 		owari();
 	} while(0);
+	skip_utf8_bom(fp0);
 	/* <<<<<<<<< -------- mml file open */
 
 	/* mid file open -------- >>>>>>>>>> */
