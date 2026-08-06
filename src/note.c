@@ -90,6 +90,9 @@ struct mmlproc *mmlproc;
 int mmlproc_ptr /* 個数 */, mmlproc_amount;
 
 void note(int); /* 音符、休符処理*/
+void note_r_noflush(void); /* `r の処理 */
+void note_off_specific(int); /* `<音名> の処理 */
+static void note_impl(int, int);
 void setcode_U(int, int);
 void setcode_F(int, int, int);
 void setcode_I(int, int, int);
@@ -104,6 +107,7 @@ static void write_step0_change(void);
 static void write_mmlproc(int, long *, long *);
 void noteoff(int, int);
 static int get_hanon(int);
+static int compute_onkai(int, int);
 int soutai0(int);
 static int soutai(int);
 static void putnote(int, int);
@@ -302,6 +306,19 @@ qn0,n1
       ・最後のステップタイムをちゃんと考えて書く。
 */
 
+ /* 音階の計算。base_onkaiは'a'〜'h'に対応する0〜11の値(オクターブ・臨時記号・
+    移調・強制転調を考慮する前の値)。get_note_values()と、和音の1音だけを
+    ノートオフするnote_off_specific()の両方から使う。 */
+static int compute_onkai(int code, int base_onkai)
+{
+	int onkai = base_onkai + 12 + get_hanon(code) + octave * 12 + under;
+
+	if(gatetime2 != -1) onkai += trans;
+	if(ktencho != 0) onkai = ktencho; /* 強制転調処理 */
+	ALIGN(onkai); /* 範囲外チェック */
+	return onkai;
+}
+
  /* note()の下請け *varsに6つの値を入れて戻る
     LSI-Cでコンパイル可能にするためにnote()から分離した(そうしないとLSI-Cでは
     メモリ不足でコンパイルできない) */
@@ -370,10 +387,7 @@ static void get_note_values(int code, struct local_note_vars *vars)
 
 	if(!(vars->oto & OTO_KYUFU)){
 		 /* このときcodeは'a'〜'h'のいずれか */
-		vars->onkai += 12 + get_hanon(code) + octave * 12 + under;
-		if(gatetime2 != -1) vars->onkai += trans;
-		if(ktencho != 0) vars->onkai = ktencho; /* 強制転調処理 */
-		ALIGN(vars->onkai); /* 範囲外チェック */
+		vars->onkai = compute_onkai(code, vars->onkai);
 	}
 	if(!(vars->oto & (OTO_K_CMD | OTO_A_CMD)))
 		vars->oncho = length();
@@ -421,6 +435,19 @@ static void get_note_values(int code, struct local_note_vars *vars)
 /* 音符、休符，\の処理 */
 void note(int code)
 {
+	note_impl(code, 0);
+}
+
+/* `r の処理: 指定した音長分ステップを進めるだけで、通常のrが持つ
+   「keyproc[]に溜まっている和音をまとめてノートオフする」自動フラッシュを
+   一切行わない */
+void note_r_noflush(void)
+{
+	note_impl('r', 1);
+}
+
+static void note_impl(int code, int no_flush)
+{
 	int i;
 	long j;
 	int gt;
@@ -435,8 +462,8 @@ void note(int code)
 	    OTO_KYUFUかOTO_KYUFU | OTO_BS_CMDの場合はlocal.onkaiは不定
     	    OTO_K_CMDかOTO_A_CMDの場合はlocal.onchoが不定 */
 
-	if((local.oto & OTO_KYUFU) && local.oncho == 0)
-		return; /* 音長ゼロの休符は無視 */
+	if((local.oto & OTO_KYUFU) && local.oncho == 0 && keyproc_ptr == 0)
+		return; /* 発音中の音が無ければ何もしない */
 
 	if(local.oto & OTO_K_CMD){ /* Kコマンドの場合 */
 		if(psw != 0) return;
@@ -523,14 +550,16 @@ void note(int code)
 		fsetpos2(fp2, &lastlenpos); /* わざわざ戻す。苦肉の策 */
 		p = lastlen; /* pというのは、最初の1回だけ効いてくるステップタイム */
 	}
-	if(local.oncho == 0){ /* 音長ゼロの音符の場合 */
-	 /* この場合(local.oto & OTO_KYUFU) != 0なので、local.onkaiは
-	    不定ではない */
+	if(local.oncho == 0 && !(local.oto & OTO_KYUFU)){ /* 音長ゼロの音符の場合 */
 		andflag = 1; /* 後ろに&があるのと同じ扱いにする */
 		write_length(0, fp2);
 		set_keyproc(local.onkai, local.koff); /* 後でキーオフが必要ということ */
 		return;
 	}
+	 /* ここに来て local.oncho == 0 なら、休符(r0)でかつ keyproc_ptr != 0 の
+	    場合に限る(そうでなければ関数の先頭で既にreturnしている)。この場合は
+	    下のキーオフ処理までそのまま進み、keyproc[]の内容をまとめてノートオフ
+	    する(local.gatetimeは休符なので既に0になっている) */
 
 	/* 以下は、mmlproc を書き込む処理 */
 	j = local.gatetime; /* jは、キーオフまでのステップタイム */
@@ -546,7 +575,7 @@ void note(int code)
 	}
 
 	/* キーオフ処理 */
-	if(!(local.oto & OTO_KYUFU) || keyproc_ptr != 0){
+	if(!(local.oto & OTO_KYUFU) || (keyproc_ptr != 0 && !no_flush)){
 		long xx;
 
 		if(gt < 0){ /* ゲートタイムが負 */
@@ -609,6 +638,58 @@ void note(int code)
 		mmlproc[i].st -= p + j + local.oncho - local.gatetime;
 	}
 	*/
+}
+
+/* `<音名> の処理: ノートオンは一切生成せず、keyproc[]で発音中とされている
+   和音のうち、指定した音階と一致する1音だけをノートオフする。音長が
+   指定されていれば(省略時は通常の音符と同じくlコマンドの値を使う)、その分
+   ステップを進めてからノートオフする。一致する音が無ければエラー。 */
+void note_off_specific(int code)
+{
+	int base_onkai, onkai, oncho, i, minst_ptr;
+	long xx;
+
+	 /* get_note_values()のswitchと同じ対応(a=9,b=10/11,c=0,d=2,e=4,f=5,
+	    g=7,h=11)。呼び出し側(mmlproc.cのdo_command())でcodeが'a'〜'h'の
+	    いずれかであることは確認済み */
+	switch(code){
+	case 'a': base_onkai = 9; break;
+	case 'b': base_onkai = german_scale ? 10 : 11; break;
+	case 'c': base_onkai = 0; break;
+	case 'd': base_onkai = 2; break;
+	case 'e': base_onkai = 4; break;
+	case 'f': base_onkai = 5; break;
+	case 'g': base_onkai = 7; break;
+	default: /* case 'h': */ base_onkai = 11; break;
+	}
+	onkai = compute_onkai(code, base_onkai);
+	oncho = length();
+
+	if(psw != 0) return;
+
+	set_keyoff(); /* keyproc2の予定済みキーオフをmmlprocへ反映(note_implと同じ) */
+
+	if(oncho != 0){
+		tstep -= lastlen;
+		fsetpos2(fp2, &lastlenpos); /* わざわざ戻す。苦肉の策 */
+		xx = lastlen + oncho;
+		while(mmlproc_ptr > 0){
+			minst_ptr = find_minst();
+			if(mmlproc[minst_ptr].st > 0) break;
+			write_mmlproc(minst_ptr, NULL, &xx);
+		}
+		write_length(xx, fp2);
+	}
+
+	for(i = 0; i < keyproc_ptr; i++){
+		if(keyproc[i].onkai == onkai) break;
+	}
+	if(i == keyproc_ptr) mml_err(75); /* 対応する発音中の音が無い */
+
+	noteoff(keyproc[i].onkai, keyproc[i].velo);
+	write_length(0, fp2);
+	shift_array(keyproc, i, keyproc_ptr);
+	keyproc_ptr--;
 }
 
 static void set_keyproc(int onkai, int velo)

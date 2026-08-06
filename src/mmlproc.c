@@ -41,6 +41,8 @@ extern int keyproc_ptr, keyproc_amount;
 extern int mmlproc_ptr, mmlproc_amount;
 extern struct mmlproc *mmlproc;
 extern void note(int); /* 音符、休符処理*/
+extern void note_r_noflush(void); /* `r の処理 */
+extern void note_off_specific(int); /* `<音名> の処理 */
 extern void noteoff(int, int);
 extern int soutai0(int);
 extern void setcode_F(int, int, int);
@@ -623,6 +625,23 @@ static void do_command(int code)
 	case 'h':
 		if(!german_scale) goto syn_err;
 		note(code);
+		break;
+	case '`': /* 発音中の和音の操作(音長0の拡張。doc/CHANGES.md参照) */
+		i = getbyte(0);
+		switch(i){
+		case 'a': case 'b': case 'c': case 'd': case 'e': case 'f': case 'g':
+			note_off_specific(i);
+			break;
+		case 'h':
+			if(!german_scale){ code = i; goto syn_err; }
+			note_off_specific(i);
+			break;
+		case 'r':
+			note_r_noflush();
+			break;
+		default:
+			code = i; goto syn_err; /* 実際に問題の文字を表示するため */
+		}
 		break;
 	case '^':
 		mml_warn(3);
@@ -2306,6 +2325,7 @@ static char *err_msgs[] = {
 	"pedal 'P?' or 'X?' is wrong",
 	"program change '@(?,?,?)' is wrong",
 	"mono mode 'Y?' is wrong",
+	"backquote note off '`?' has no matching sounding note",	/* 75 */
 };
 
 static char *warn_msgs[] = {
