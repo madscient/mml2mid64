@@ -64,6 +64,9 @@ extern int check_bendchange(int);
 extern void mml_err(int);
 extern int psw;
 extern void legato_switch(int); /* mmlproc.cのpedal()と同じCC#68を送出する */
+extern void portamento_switch(int); /* mmlproc.cのpedal()と同じCC#65を送出する */
+extern void portamento_source_note(int); /* CC#84(Portamento Control)を送出する */
+extern void bend_shorthand_tilde(void); /* '~'をBSn省略形として処理する(従来互換) */
 
 /* 98.3.6 追加 */
 /* U指定時に last=first=0
@@ -96,8 +99,8 @@ void note(int); /* 音符、休符処理*/
 void note_r_noflush(void); /* `r の処理 */
 void note_off_specific(int); /* `<音名> の処理 */
 static void note_impl(int, int);
-static void emit_note(struct local_note_vars *, int, int, int, int, int);
-static void note_tie_entry(int); /* #ampasandtie on の下での&チェーン処理 */
+static void emit_note(struct local_note_vars *, int, int, int, int, int, int, int);
+static void note_tie_entry(int); /* &/~チェーン処理(doc/CHANGES.md参照) */
 void setcode_U(int, int);
 void setcode_F(int, int, int);
 void setcode_I(int, int, int);
@@ -446,7 +449,11 @@ static void get_note_values(int code, struct local_note_vars *vars)
 /* 音符、休符，\の処理 */
 void note(int code)
 {
-	if(ampasandtie){
+	if(ampasandtie || getbyte(1) == '~'){
+		 /* '~'は#ampasandtieの状態に関わらず、直後に音符が続く限り常に
+		    自動ポルタメント連結として扱う(doc/CHANGES.md参照)。直後が
+		    音符として解釈できなければnote_tie_entry()の中で従来通りの
+		    '~n'(BSnの省略形)として処理される */
 		note_tie_entry(code);
 		return;
 	}
@@ -499,17 +506,20 @@ static void note_impl(int code, int no_flush)
 		andflag = 0;
 	}
 
-	emit_note(&local, preandflag, andflag, no_flush, 0, 0);
+	emit_note(&local, preandflag, andflag, no_flush, 0, 0, 0, 0);
 }
 
-/* note_impl()から発音・ノートオフの出力部分を抽出したもの(#ampasandtie on の
-   note_tie_entry()と共用するため)。挙動はnote_impl()時代と同じ。
-   legato_before_off_on/offは、#ampasandtie on の下で「異音への&チェーン」の
-   先頭/末尾ノートのノートオフ直前にレガートCC(#68)を挿入するためのフラグ。
-   通常の(#ampasandtie offの)呼び出しでは常に0。 */
+/* note_impl()から発音・ノートオフの出力部分を抽出したもの(note_tie_entry()と
+   共用するため)。挙動はnote_impl()時代と同じ。
+   legato_before_off_on/offは、&チェーンの「異音への連結」の先頭/末尾ノートの
+   ノートオフ直前にレガートCC(#68)を挿入するためのフラグ。
+   portamento_before_off_on/offは、~による自動ポルタメント連結を含むチェーンの
+   先頭/末尾ノートのノートオフ直前にポルタメントCC(#65)を挿入するためのフラグ。
+   通常の(チェーンに参加しない単発の音符の)呼び出しではいずれも常に0。 */
 static void emit_note(struct local_note_vars *localp, int preandflag,
                        int andflag_now, int no_flush,
-                       int legato_before_off_on, int legato_before_off_off)
+                       int legato_before_off_on, int legato_before_off_off,
+                       int portamento_before_off_on, int portamento_before_off_off)
 {
 	int i;
 	long j;
@@ -628,6 +638,8 @@ static void emit_note(struct local_note_vars *localp, int preandflag,
 			if(!(local.oto & OTO_KYUFU)){ /* 休符の時 */
 				if(legato_before_off_on) legato_switch(1);
 				if(legato_before_off_off) legato_switch(0);
+				if(portamento_before_off_on) portamento_switch(1);
+				if(portamento_before_off_off) portamento_switch(0);
 				noteoff(local.onkai, local.koff);
 				write_length(0, fp2);
 			}
@@ -688,11 +700,26 @@ static void tie_ensure_capacity(int need)
 	if(tie_segs == NULL || tie_logical == NULL) mml_err(61);
 }
 
-/* #ampasandtie on の下での&チェーンの処理(doc/CHANGES.md参照)。note()から、
-   コード'a'〜'h','r','\\','K','A'に対して呼ばれる(K/Aは&チェーンに参加しない
+/* '~'の直後が音符として解釈できる文字(get_note_values()が受理する
+   'a'〜'h','r','\\','K','A')かどうかを調べる。note_tie_entry()が、'~'を
+   ノート連結として扱うか、従来通り'~n'(BSnの省略形)として扱うかを判定する
+   ために使う。 */
+static int is_note_chain_start(int code)
+{
+	switch(code){
+	case 'a': case 'b': case 'c': case 'd': case 'e': case 'f': case 'g':
+	case 'h': case 'r': case '\\': case 'K': case 'A':
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+/* &/~チェーンの処理(doc/CHANGES.md参照)。note()から、コード
+   'a'〜'h','r','\\','K','A'に対して呼ばれる(K/Aはチェーンに参加しない
    ので、そのままnote_impl()に委譲する)。
 
-   &で繋がれた音符・休符のトークン列をすべて読み進めて集めたあと、
+   &や~で繋がれた音符・休符のトークン列をすべて読み進めて集めたあと、
    「休符はノートオフを伴わないステップ消費として扱い、音高比較は休符を除いた
    前後の実音符同士で行う」というルールで論理ノート列を組み立てる:
      - 休符: 直前に開いている論理ノートがあればその音長に加算する
@@ -703,13 +730,30 @@ static void tie_ensure_capacity(int need)
        論理ノートとして追加する。
    論理ノートが2個以上できた場合だけ、先頭の論理ノートのノートオフ直前に
    レガートON、末尾の論理ノートのノートオフ直前にレガートOFFを挿入する
-   (CC#68。P4/X4と同じ)。 */
+   (CC#68。P4/X4と同じ)。さらに、チェーンの中に1個以上'~'による連結が
+   あった場合は、同じ境界にポルタメントON/OFF(CC#65。P1/X1と同じ)も挿入する。
+   '~'は#ampasandtieの状態に関わらず常にチェーン連結として働くが、'&'は
+   これまで通り#ampasandtie onのときだけこのタイ/スラー処理に参加する
+   ('~'を含まないチェーンにnote_tie_entry()が呼ばれるのは#ampasandtie on
+   の場合だけなので、'&'単体の意味はこれまでと変わらない)。
+
+   '~'の直後が音符として解釈できない文字だった場合(例: "c~64")は、
+   ノート連結ではなく従来通りの'~n'(BSnの省略形)コマンドとして扱う。
+   ただしbend_shorthand_tilde()の呼び出しは、そこまでに集まっている
+   ノート・休符(tie_segs[])がすべて発音・出力し終わるまで遅らせる
+   (pending_bend_shorthandに覚えておき、関数の最後でまとめて呼ぶ)。
+   note_impl()と違いnote_tie_entry()は読み進めるのと発音を書き出すのが
+   別のタイミングになるため、ここで即座にbend_shorthand_tilde()を呼ぶと
+   まだ書き出していない先行ノートよりベンドイベントが前に出力されて
+   しまう(doc/CHANGES.md参照)。 */
 static void note_tie_entry(int code)
 {
 	int n, nlogical, i;
 	int entry_preandflag;
 	long lead_oncho = 0;
 	int have_lead = 0;
+	int chain_has_portamento = 0;
+	int pending_bend_shorthand = 0;
 
 	if(code == 'K' || code == 'A'){
 		note_impl(code, 0);
@@ -721,8 +765,24 @@ static void note_tie_entry(int code)
 	tie_ensure_capacity(1);
 	get_note_values(code, &tie_segs[0]);
 	n = 1;
-	while(getbyte(1) == '&'){
-		(void)getbyte(2);
+	for(;;){
+		int connector = getbyte(1);
+
+		if(connector == '&'){
+			(void)getbyte(2);
+		} else if(connector == '~'){
+			int nextc;
+
+			(void)getbyte(2);
+			nextc = getbyte(1);
+			if(!is_note_chain_start(nextc)){
+				pending_bend_shorthand = 1;
+				break;
+			}
+			chain_has_portamento = 1;
+		} else {
+			break;
+		}
 		tie_ensure_capacity(n + 1);
 		code = getbyte(0);
 		if(code == 'K' || code == 'A') mml_err(76);
@@ -761,8 +821,9 @@ static void note_tie_entry(int code)
 		if(have_lead && lead_oncho > 0){
 			struct local_note_vars restv = tie_segs[n-1];
 			restv.oncho = lead_oncho;
-			emit_note(&restv, entry_preandflag, 0, 0, 0, 0);
+			emit_note(&restv, entry_preandflag, 0, 0, 0, 0, 0, 0);
 		}
+		if(pending_bend_shorthand) bend_shorthand_tilde();
 		return;
 	}
 
@@ -770,7 +831,7 @@ static void note_tie_entry(int code)
 		/* 先頭の休符ぶん、最初の実音符の発音開始を遅らせる */
 		struct local_note_vars restv = tie_segs[0];
 		restv.oncho = lead_oncho;
-		emit_note(&restv, entry_preandflag, 0, 0, 0, 0);
+		emit_note(&restv, entry_preandflag, 0, 0, 0, 0, 0, 0);
 		entry_preandflag = 1; /* F/I等のランプ処理を継続扱いにする */
 	}
 
@@ -778,6 +839,8 @@ static void note_tie_entry(int code)
 		int pf = (i == 0) ? entry_preandflag : 1;
 		int lon = (nlogical > 1 && i == 0);
 		int loff = (nlogical > 1 && i == nlogical - 1);
+		int pon = chain_has_portamento && lon;
+		int poff = chain_has_portamento && loff;
 		struct local_note_vars *ln = &tie_logical[i];
 
 		if(!ln->gatetime_explicit){
@@ -785,14 +848,22 @@ static void note_tie_entry(int code)
 		}
 		if((lon || loff) && ln->gatetime < 0) mml_err(77);
 
-		emit_note(ln, pf, 0, 0, lon, loff);
+		emit_note(ln, pf, 0, 0, lon, loff, pon, poff);
 	}
+
+	if(pending_bend_shorthand) bend_shorthand_tilde();
 }
 
 /* `<音名> の処理: ノートオンは一切生成せず、keyproc[]で発音中とされている
    和音のうち、指定した音階と一致する1音だけをノートオフする。音長が
    指定されていれば(省略時は通常の音符と同じくlコマンドの値を使う)、その分
-   ステップを進めてからノートオフする。一致する音が無ければエラー。 */
+   ステップを進めてからノートオフする。一致する音が無ければエラー。
+
+   ただし、発音中の和音が一つも無い場合(keyproc_ptr == 0)は、ノートオフ対象が
+   無いというエラーにする代わりに、ポルタメントソースノートの指定
+   (コントロールチェンジ84番。doc/CHANGES.md参照)として扱う。この用途では
+   `<音名>` を単体で書く必要があり、音長やカンマ引数は書けない
+   (書くとコンパイルエラーになる)。 */
 void note_off_specific(int code)
 {
 	int base_onkai, onkai, oncho, i, minst_ptr;
@@ -812,6 +883,16 @@ void note_off_specific(int code)
 	default: /* case 'h': */ base_onkai = 11; break;
 	}
 	onkai = compute_onkai(code, base_onkai);
+
+	if(keyproc_ptr == 0){
+		int peek = getbyte(1);
+
+		if(is_digit(peek) || peek == '%' || peek == '.') mml_err(78);
+		if(psw != 0) return;
+		portamento_source_note(onkai);
+		return;
+	}
+
 	oncho = length();
 
 	if(psw != 0) return;
