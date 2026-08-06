@@ -59,6 +59,7 @@ int german_scale = 0; /* 音名をドイツ流のCDEFGAHにするスイッチ */
 char track_map[TRKMAP_SIZE];	/* MKR追加 */
 int backcompati;
 int ampasandtie = 0; /* &をタイ/スラーとして解釈するスイッチ(doc/CHANGES.md参照) */
+int sysexsinglequote = 0; /* EX中の文字列埋め込みを"..."でなく'...'にするスイッチ */
 
  /* SMFのトラック数フィールドは16ビットなので、それを超えてはならない */
 typedef char mml2mid_maxtrknum_fits_in_smf[MAXTRKNUM <= 65535 ? 1 : -1];
@@ -101,6 +102,7 @@ static void getinclude(char *, prepro_linebuf *, fileptr);
 static void gettitle(const char *, char *, prepro_linebuf *);
 static int getintdirective(char *, const char *, prepro_linebuf *);
 static int getbooldirective(char *, const char *, prepro_linebuf *);
+static char *geteos(prepro_linebuf *, char *, int, int);
 static void getswap(char *, prepro_linebuf *);
 MML_NORETURN static void prepro_error(const char *, prepro_linebuf *);
 MML_NORETURN static void prepro_illdirective(prepro_linebuf *);
@@ -638,11 +640,11 @@ static int getLine(prepro_linebuf *lbuf, int i)
 	}
 }
 
-static char *geteos(prepro_linebuf *lbuf, char *p, int flg)
-/* 「" "」で囲まれる文字列の最後の「"」の位置を返す
-    pには最初の「"」の次の位置を与えておく
+static char *geteos(prepro_linebuf *lbuf, char *p, int flg, int qc)
+/* 「qc qc」で囲まれる文字列の最後の「qc」の位置を返す
+    pには最初の「qc」の次の位置を与えておく
     継続行の場合、継続行マークを上書きして次の行も読みlbuf->pending_eols増
-    「"」が釣り合わない、「\」が変などエラーならNULL
+    「qc」が釣り合わない、「\」が変などエラーならNULL
     flgが非0なら「\」の解釈を行った文字列でpを上書きしその末尾を'\0'に
     する。この場合継続行の扱いはしない
     lbufがNULLの場合も継続行の扱いはしない */
@@ -652,12 +654,13 @@ static char *geteos(prepro_linebuf *lbuf, char *p, int flg)
 	int i;
 
 	for(q = p;;){
+		if(*p == qc){
+			if(flg) *q = '\0';
+			return p;
+		}
 		switch(*p){
 		case '\0':
 			return NULL;
-		case '"':
-			if(flg) *q = '\0';
-			return p;
 		case '\\':
 			++p;
 			if(!flg){
@@ -767,11 +770,11 @@ static int getLine_cooked(prepro_linebuf *lbuf)
 					}
 					lbuf->pending_eols++;
 					continue;
-				} else if(*p == '"'){
-					char *r;
+				} else if(*p == '"' || *p == '\''){
+					char *r, qc = *p;
 
 					i = (int)(p - lbuf->buf), j = (int)(q - lbuf->buf);
-					if(NULL == (r = geteos(lbuf, p+1, 0)))
+					if(NULL == (r = geteos(lbuf, p+1, 0, qc)))
 						prepro_illstring(lbuf);
 					 /* geteos()が継続行を読む可能性があるのはここだけ */
 					p = lbuf->buf + i, q = lbuf->buf + j;
@@ -913,6 +916,11 @@ static void getsp(char *curfile, fileptr fpi, fileptr fpo)
 					ampasandtie =
 					  getbooldirective(q, "ampasandtie", &lbuf);
 					putc2('\n', fpo);
+				} else
+				if(!strncmp(p, "sysexsinglequote", len)){
+					sysexsinglequote =
+					  getbooldirective(q, "sysexsinglequote", &lbuf);
+					putc2('\n', fpo);
 				} else {
 					prepro_illdirective(&lbuf);
 				}
@@ -944,7 +952,7 @@ static void getppinfo(char *p, prepro_linebuf *lbuf, fileptr fpo)
 		free(lbuf->virt_curfile), lbuf->virt_curfile = NULL;
 		break;
 	case '"':
-		if((p = geteos(NULL, q, 0)) == NULL) prepro_illstring(lbuf);
+		if((p = geteos(NULL, q, 0, '"')) == NULL) prepro_illstring(lbuf);
 		if(*next_nonsp(p+1)) prepro_illdirective(lbuf);
 
 		free(lbuf->virt_curfile);
@@ -963,13 +971,13 @@ static void getinclude(char *p, prepro_linebuf *lbuf, fileptr fpo)
 	char *inclfile, *q;
 
 	if(*p != '"') prepro_illdirective(lbuf);
-	if((q = geteos(NULL, ++p, 0)) == NULL) prepro_illstring(lbuf);
+	if((q = geteos(NULL, ++p, 0, '"')) == NULL) prepro_illstring(lbuf);
 	if(*next_nonsp(q+1)) prepro_illdirective(lbuf);
 
 	if(NULL == (inclfile = strnDup(p, q-p))) prepro_nomem();
 	out_ppinfo(fpo, 1, inclfile, NULL);
 
-	(void)geteos(NULL, p, 1);
+	(void)geteos(NULL, p, 1, '"');
 	if((fpinc = fopen2(p, "rb")) == NULL){
 		msg_printf("ERROR! cannot find include file '%s'", p);
 		prepro_error(Msg, lbuf);
@@ -985,7 +993,7 @@ static void gettitle(const char *kind, char *p, prepro_linebuf *lbuf)
 	char *q;
 
 	if(*p != '"') prepro_illdirective(lbuf);
-	if((q = geteos(NULL, ++p, 1)) == NULL) prepro_illstring(lbuf);
+	if((q = geteos(NULL, ++p, 1, '"')) == NULL) prepro_illstring(lbuf);
 	if(*next_nonsp(q+1)) prepro_illdirective(lbuf);
 
 	 /* The SMF meta-event stores the length in one byte, so 255 is the
