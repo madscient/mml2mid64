@@ -58,6 +58,7 @@ int x68k2 = 0; /* (, ) を逆にするスイッチ */
 int german_scale = 0; /* 音名をドイツ流のCDEFGAHにするスイッチ */
 char track_map[TRKMAP_SIZE];	/* MKR追加 */
 int backcompati;
+int ampasandtie = 0; /* &をタイ/スラーとして解釈するスイッチ(doc/CHANGES.md参照) */
 
  /* SMFのトラック数フィールドは16ビットなので、それを超えてはならない */
 typedef char mml2mid_maxtrknum_fits_in_smf[MAXTRKNUM <= 65535 ? 1 : -1];
@@ -99,6 +100,7 @@ static void getppinfo(char *, prepro_linebuf *, fileptr);
 static void getinclude(char *, prepro_linebuf *, fileptr);
 static void gettitle(const char *, char *, prepro_linebuf *);
 static int getintdirective(char *, const char *, prepro_linebuf *);
+static int getbooldirective(char *, const char *, prepro_linebuf *);
 static void getswap(char *, prepro_linebuf *);
 MML_NORETURN static void prepro_error(const char *, prepro_linebuf *);
 MML_NORETURN static void prepro_illdirective(prepro_linebuf *);
@@ -906,6 +908,11 @@ static void getsp(char *curfile, fileptr fpi, fileptr fpo)
 					tempo_master =
 					  getintdirective(q, "xtempo", &lbuf);
 					putc2('\n', fpo);
+				} else
+				if(!strncmp(p, "ampasandtie", len)){
+					ampasandtie =
+					  getbooldirective(q, "ampasandtie", &lbuf);
+					putc2('\n', fpo);
 				} else {
 					prepro_illdirective(&lbuf);
 				}
@@ -1010,6 +1017,26 @@ static int getintdirective(char *p, const char *directivename,
 	ret = atoi(p);
 
 	msg_printf("%s: %d\n", directivename, ret);
+	text_cat(Msg);
+	msg_flush();
+	return ret;
+}
+
+ /* "on" または "off" を取るディレクティブ用。戻り値は1(on)または0(off) */
+static int getbooldirective(char *p, const char *directivename,
+			   prepro_linebuf *lbuf)
+{
+	int ret;
+
+	if(!strncmp(p, "on", 2) && !*next_nonsp(p+2)){
+		ret = 1;
+	} else if(!strncmp(p, "off", 3) && !*next_nonsp(p+3)){
+		ret = 0;
+	} else {
+		prepro_illdirective(lbuf);
+	}
+
+	msg_printf("%s: %s\n", directivename, ret ? "on" : "off");
 	text_cat(Msg);
 	msg_flush();
 	return ret;
