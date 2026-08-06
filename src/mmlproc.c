@@ -32,6 +32,7 @@ extern int x68k;
 extern int x68k2;
 MML_NORETURN extern void remove_file_and_owari(void);
 extern int german_scale, backcompati, mskanji, warnmode;
+extern int sysexsinglequote; /* EX中の文字列埋め込みを"..."でなく'...'にするスイッチ */
 
 /* note.c からの extern */
 extern int andflag;     /* &があったかどうかのフラグ */
@@ -165,7 +166,7 @@ static void get_trackname(void);
 static void write_trackname(void);
 static void texts(void);
 static void put_midistring(int);
-static int mml_getstring(char *, int);
+static int mml_getstring(char *, int, int);
 static void do_command(int);
 
 extern int x_values[]; /* x_expression, x_panpot…を全部まとめた配列 */
@@ -1677,13 +1678,13 @@ static void getexclusive(int x)
 			}
 		}
 		i = getbyte(1);
-		if(i == '"'){ /* Mod Nide */
+		if(i == (sysexsinglequote ? '\'' : '"')){ /* Mod Nide */
 			 /* named `text' originally, which shadowed the global
 			    message buffer of the same name */
 			unsigned char strbuf[1024];
 			int got, j;
 
-			got = mml_getstring((char *)strbuf, sizeof(strbuf));
+			got = mml_getstring((char *)strbuf, sizeof(strbuf), i);
 			for(j = 0; j < got; j++) ex_add(strbuf[j]);
 			goto aft;
 		} else if (i=='B'||i=='b') {
@@ -2426,7 +2427,7 @@ void write_header(void)
 
 static void get_trackname(void)
 {
-	switch(mml_getstring(trackname, (int)sizeof(trackname))){
+	switch(mml_getstring(trackname, (int)sizeof(trackname), '"')){
 	case -1:
 		return;
 	case (int)sizeof(trackname):
@@ -2478,7 +2479,7 @@ static void put_midistring(int x)
 	size_t i, len;
 	char t[MAX_TEXT_STR + 1];
 
-	switch(mml_getstring(t, (int)sizeof(t))){
+	switch(mml_getstring(t, (int)sizeof(t), '"')){
 	case -1:
 		mml_err(58); /* never returns */
 		break;
@@ -2495,26 +2496,30 @@ static void put_midistring(int x)
 	write_length(0, fp2);
 }
 
-static int mml_getstring(char *buf, int length)
- /* 戻り値 -1:最初が「"」でなかった 0以上:正常取得した文字列の長さ
+static int mml_getstring(char *buf, int length, int qc)
+ /* qcは対応する引用符文字('"'または'\'')
+    戻り値 -1:最初が「qc」でなかった 0以上:正常取得した文字列の長さ
     文字列末には'\0'を書く。戻り値はその'\0'を含まない長さ。文字列が長過ぎれば
     lengthバイトだけ取得し(最後の'\0'マークを書かずに)lengthを返す */
 {
 	int i, j, c, d;
 
 	d = getbyte(1);
-	if(d != '"') return -1;
+	if(d != qc) return -1;
 	(void)getbyte(2);
 	for(i = 0; ; i++){
 		if(i == length) return i;
-		switch(d = Getbyte(0, 1)){
-		case '"':
+		d = Getbyte(0, 1);
+		if(d == qc){
 			if((d = getbyte(1)) == '+'){ /* 文字列連接 */
 				(void)getbyte(2);
-				if((d = getbyte(0)) != '"') mml_err(49);
+				if((d = getbyte(0)) != qc) mml_err(49);
 				i--; continue;
 			}
-			 /* FALLTHROUGH */
+			buf[i] = 0;
+			return i;
+		}
+		switch(d){
 		case -1:
 			buf[i] = 0;
 			return i;
