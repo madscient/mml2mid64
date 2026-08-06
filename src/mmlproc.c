@@ -1236,10 +1236,48 @@ static void getpanpot(void)
 	}
 }
 
+/* プログラムチェンジそのものを書く関数（バンクセレクトは含まない） */
+static void put_progchange(void)
+{
+	if(run != 0xc){
+		putc2(0xc0 + cur_ch, fp2);
+		run= 0xc;
+	}
+	putc2(prog, fp2);
+	write_length(0, fp2);
+}
+
 /* @コマンドの処理 */
 static void progchange(void)
 {
-	int num, i;
+	int num, msb, lsb, i;
+
+	if(getbyte(1) == '('){ /* @(msb,lsb,prog) の場合 */
+		(void)getbyte(2);
+		msb = xget(&i);
+		if(i != 0) mml_err(73);
+		if(getbyte(1) != ',') mml_err(73);
+		(void)getbyte(2);
+		lsb = xget(&i);
+		if(i != 0) mml_err(73);
+		if(getbyte(1) != ',') mml_err(73);
+		(void)getbyte(2);
+		num = xget(&i);
+		if(i != 0) mml_err(73);
+		if(getbyte(1) != ')') mml_err(73);
+		(void)getbyte(2);
+		bs1 = msb;
+		bs2 = lsb;
+		prog = num + base;
+		if(psw == 0){
+			put_cntchange0(0, bs1);
+			write_length(0, fp2);
+			put_cntchange0(32, bs2);
+			write_length(0, fp2);
+			put_progchange();
+		}
+		return;
+	}
 
 	num = xget(&i);
 	if(i == -1 || i == 1){
@@ -1249,14 +1287,7 @@ static void progchange(void)
 		prog = num + base;
 	} else mml_err(23);
 	/* prog &= ~0x80; …不要? */
-	if(psw == 0){
-		if(run != 0xc){
-			putc2(0xc0 + cur_ch, fp2);
-			run= 0xc;
-		}
-		putc2(prog, fp2);
-		write_length(0, fp2);
-	}
+	if(psw == 0) put_progchange();
 }
 
 /* Eコマンドの処理 */
@@ -2254,6 +2285,7 @@ static char *err_msgs[] = {
 
 	"exclusive data too long",
 	"pedal 'P?' or 'X?' is wrong",
+	"program change '@(?,?,?)' is wrong",
 };
 
 static char *warn_msgs[] = {
