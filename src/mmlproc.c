@@ -1807,6 +1807,31 @@ void legato_switch(int on)
 	put_cntchange(68, on ? 127 : 0, 0);
 }
 
+/* '~'による自動ポルタメント連結(doc/CHANGES.md参照)のためにコントロール
+   チェンジ65番(P1/X1のポルタメント・ペダルと同じ)を送出する。note.cから
+   呼ばれる。引数onは真偽値(0以外でオン)。 */
+void portamento_switch(int on)
+{
+	put_cntchange(65, on ? 127 : 0, 0);
+}
+
+/* `<音名> がポルタメントソースノート(keyprocが空の場合。doc/CHANGES.md
+   参照)として使われたときに、コントロールチェンジ84番(Portamento
+   Control)でソースとなる音階を送出する。note.cから呼ばれる。 */
+void portamento_source_note(int onkai)
+{
+	put_cntchange(84, onkai, 0);
+}
+
+/* note.cのnote_tie_entry()から呼ばれる。'~'をノート連結の一部として
+   解釈できなかった場合(直後が音符として解釈できる文字でなかった場合)に、
+   従来どおり'~n'(BSnの省略形)として処理するためのラッパー。
+   do_command()のcase '~'と全く同じ処理を、同じ読み取り位置から行う。 */
+void bend_shorthand_tilde(void)
+{
+	bendset('S');
+}
+
 /* Yコマンドの処理（モノモード・オン／ポリモード・オン）
    Yn でコントロールチェンジ126番（Mono Mode On）nを送出。nは省略時1。
      n=0 の場合は例外的にコントロールチェンジ127番（Poly Mode On）0を送出する。
@@ -2334,9 +2359,10 @@ static char *err_msgs[] = {
 	"program change '@(?,?,?)' is wrong",
 	"mono mode 'Y?' is wrong",
 	"backquote note off '`?' has no matching sounding note",	/* 75 */
-	"'&' tie/slur chain cannot contain 'K' or 'A' (#ampasandtie on)",
-	"'&' tie/slur chain boundary cannot use a negative local gatetime"
-	  " (#ampasandtie on)",
+	"'&'/'~' chain cannot contain 'K' or 'A'",
+	"'&'/'~' chain boundary cannot use a negative local gatetime",
+	"backquote portamento source note '`?' cannot take a length or"
+	  " comma argument",
 };
 
 static char *warn_msgs[] = {
