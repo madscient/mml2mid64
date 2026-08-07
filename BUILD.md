@@ -90,14 +90,20 @@ C4819 warnings.
 
 ## What changed in the modernisation
 
-Behaviour is unchanged — the compiler produces the same MIDI as before (see
-`test/README.md` for the evidence).
+This section covers the 64-bit port itself, which left behaviour unchanged —
+the compiler produced the same MIDI as before (see `test/README.md` for the
+evidence).
 
-Fork changes made *after* the modernisation, including the one MML extension
-(`P`/`X` now take a 0–4 argument selecting the pedal controller), are documented
-separately: [doc/CHANGES.md](doc/CHANGES.md) for the user-visible differences
-from the original, [doc/STATUS.md](doc/STATUS.md) for the change log.
-The original distribution's own documentation is kept verbatim in `org-doc/`.
+Fork changes made *after* the modernisation are documented separately, and
+those **do** add MML syntax and, in a few cases, change generated MIDI: the
+`Y` / `mv` / `mt` commands, `@(msb,lsb,prog)`, an argument for `P` / `X`, a
+second character in track names, backquote note-off and portamento source
+notes, the `#ampasandtie` and `#sysexsinglequote` directives, `~` note chains,
+and fixes for three of the defects the original author listed in
+`org-doc/todo.txt`. See [doc/CHANGES.md](doc/CHANGES.md) for the user-visible
+differences from the original and [doc/STATUS.md](doc/STATUS.md) for the change
+log. The original distribution's own documentation is kept verbatim in
+`org-doc/`.
 
 ### Build system
 
@@ -158,3 +164,10 @@ These are genuine bugs found while modernising, not just tidying:
   code assigned the result over the only pointer to the block).
 - `put_cpres` was declared `static` and defined non-static.
 - Removed the dead `dir[]` state in `setcode_I()` — written, never read.
+
+Separately, three of the defects the original author listed in
+`org-doc/todo.txt` have been fixed. Those are not modernisation fallout — the
+code matched the pre-modernisation original in `.orig-euc/` — and unlike the
+list above they can change generated MIDI, so they are documented for users in
+[doc/CHANGES.md](doc/CHANGES.md#不具合修正によって変わる挙動) and for developers
+in [doc/STATUS.md](doc/STATUS.md). `test/regress/` pins them down.

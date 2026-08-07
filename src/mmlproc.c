@@ -83,6 +83,8 @@ static struct {
 static int kakko_def;
 int rpan1, rpan2;
 int mod_delay, mod_after;
+int mod_chain_defer; /* Mコマンドの遅延モジュレーションの発行を、
+                        &チェーンの次の音符へ持ち越すかどうか(note.c参照) */
 int koff;		/* キーオフ・ベロシティ */
 static struct tmap *tmap;
 static int tmap_ptr, tmap_amount;
@@ -95,6 +97,8 @@ int codei[KIND_MAX][5];  /* Iコマンド保存用 */
 static int rpn_para;
 static int nrpn_para;
 int psw; /* '='スイッチ */
+int ichi; /* =1 があったかどうかのフラグ */
+static int psw_line; /* 最後に実行した'='コマンドの行番号(tmapのソート用) */
 static int prog; /* プログラムチェンジ */
 static int bs1; /* bank select */
 static int bs2; /* bank select */
@@ -445,10 +449,16 @@ int converttrk(void)
 	rvel1 = rvel2 = 0;
 	randvel1 = randvel2 = 0;
 	mod_delay = -1;
+	mod_chain_defer = 0;
 	koff = 0; /* キーオフベロシティー */
 	rpn_para = -1;
 	nrpn_para = -1;
 	psw = 0; /* '='スイッチＯＦＦ */
+	ichi = 0; /* まだ'=1'は現れていない */
+	 /* ichiはトラック毎に初期化しないと、行中に'=1'を書いたトラックの
+	    フラグが次のトラックへ持ち越され、'=1'を通っていないトラックが
+	    '=0'の所でプログラムチェンジなどを余計に出力してしまう */
+	psw_line = 0; /* まだ'='コマンドを1つも通っていない */
 	prog = -1;
 	bs1 = bs2 = 0;
 	for(i = 0; i < KIND_MAX; i++){
@@ -721,14 +731,17 @@ static void do_command(int code)
 	    ここでの処理は不要 */
 }
 
-int ichi; /* =1 があったかどうかのフラグ */
-
 /*
  * '='スイッチの処理
  */
 static void setpsw(void)
 {
 	int i, num;
+
+	 /* '='はトラックをまたいで効くので、どのトラックのコンパイル中でも
+	    同じ順番で同じ'='を通る。同じステップタイムに複数のトラックから
+	    テンポが書かれた場合の順序付けに使う(add_tmap()) */
+	psw_line = cur_line;
 
 	num = xget(&i);
 	if(i == -2){
@@ -843,6 +856,15 @@ static int tmap_timing_comp(const void *p1, const void *p2)
 	} else {
 		if(t2->map == TMAP_DIFF) return -1;
 	} /* 差分指定はそれ以外より後 */
+	if(t1->psw_line != t2->psw_line)
+		return t1->psw_line < t2->psw_line ? -1 : 1;
+	 /* '='をまたいだ順序はトラックの並び順より優先する。
+	    tmapはトラック単位に順に積まれるので、indexだけで順序付けると
+	    「'=1'で飛ばした区間のテンポ(=0の時点で反映されるべきもの)」が
+	    「先にコンパイルされた別トラックの'=0'以後のテンポ」より後ろに
+	    来てしまい、後勝ちで再開後のテンポが無効になる。
+	    '='は全トラックが同じ順に通るので、psw_lineはトラック間で
+	    比較できる。'='が1つも無いMMLでは常に0なので順序は変わらない */
 	return t1->index < t2->index ? -1 : 1;
 	 /* 同じ値同士での順番は保存 */
 }
@@ -960,6 +982,7 @@ static void tmap_realloc(void) /* Add Nide */
 static void add_tmap(int map, int num, long step)
 {
 	tmap[tmap_ptr].index = tmap_ptr;
+	tmap[tmap_ptr].psw_line = psw_line;
 	tmap[tmap_ptr].map = map;
 	tmap[tmap_ptr].p1 = num;
 	tmap[tmap_ptr].st = step;

@@ -98,6 +98,44 @@ foreach(_mml IN LISTS _mml_samples)
 endforeach()
 
 # ---------------------------------------------------------------------------
+# Bug-fix regression tests: compile every test/regress/*.mml and compare the
+# output against the SHA-256 recorded in test/regress.sha256.  These pin down
+# the fixes for the defects listed in org-doc/todo.txt (and, for tempo-order,
+# the cases those fixes must NOT change).  Written for this fork, so they are
+# always available -- unlike the sample suite above.
+# ---------------------------------------------------------------------------
+set(_regressdir "${CMAKE_CURRENT_SOURCE_DIR}/test/regress")
+set(_regressbase "${CMAKE_CURRENT_SOURCE_DIR}/test/regress.sha256")
+
+set(_rhashes "")
+if(EXISTS "${_regressbase}")
+  file(STRINGS "${_regressbase}" _rhashes)
+endif()
+
+file(GLOB _mml_regress "${_regressdir}/*.mml")
+
+foreach(_mml IN LISTS _mml_regress)
+  get_filename_component(_stem "${_mml}" NAME_WE)
+
+  set(_sha "")
+  foreach(_line IN LISTS _rhashes)
+    if(_line MATCHES "^([0-9a-f]+)[ \t]+${_stem}$")
+      set(_sha "${CMAKE_MATCH_1}")
+      break()
+    endif()
+  endforeach()
+
+  add_test(NAME regress.${_stem}
+           COMMAND ${CMAKE_COMMAND}
+                   -DMML2MID=$<TARGET_FILE:mml2mid>
+                   -DSAMPLEDIR=${_regressdir}
+                   -DSTEM=${_stem}
+                   -DEXPECT_SHA=${_sha}
+                   -DOUT=${CMAKE_CURRENT_BINARY_DIR}/testout/regress-${_stem}.mid
+                   -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/RunSampleTest.cmake)
+endforeach()
+
+# ---------------------------------------------------------------------------
 # Track-name tests: compile every test/trackname/*.mml and check the list of
 # tracks it produced against the .trk file beside it.  These MMLs are written
 # for this fork, so unlike the sample suite they are always available.
