@@ -53,6 +53,8 @@ struct mmlproc {
 
 struct tmap {
 	int index; /* ソート時に同じstep timeの指定同士の順番を保存するため */
+	int psw_line; /* この指定を書いた時点で最後に通った'='コマンドの行番号。
+	                 同じstep timeでのトラックをまたいだ順序付けに使う */
 	int map;
 #define TMAP_BEAT (-1)	/* 拍子 */
 #define TMAP_POP (-2)	/* テンポスタックのポップ */

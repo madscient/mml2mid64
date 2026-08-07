@@ -53,6 +53,7 @@ extern int gatetime2;
 extern int ctl_values[]; /* expression, panpot, …を全部まとめた配列 */
 extern int rpan1, rpan2;
 extern int mod_delay, mod_after;
+extern int mod_chain_defer;
 extern struct keyproc2 *keyproc2;
 extern int keyproc2_ptr /* 個数 */, keyproc2_amount;
 extern int koff;	/* キーオフ・ベロシティ */
@@ -557,12 +558,29 @@ static void emit_note(struct local_note_vars *localp, int preandflag,
 	/* ステップ0〜local.gatetime まで処理する */
 	/* 発音前に先行して処理しないといけない場合もあるのだ！ */
 	/* 発音前に処理するのは、キーオン／オフ以外でステップ0のイベント */
-	if(local.oto == 0 && preandflag == 0 && mod_delay != -1){
-		x_mod_on = 0;
-		set_mmlproc(6, 0, 0); /* 入れておく必要あり (6:modulation) */
-		if(mod_delay < local.gatetime){
-			if(mod_delay && mod_after)
-				set_mmlproc(6, mod_after, mod_delay);
+	if(local.oto == 0 && mod_delay != -1 &&
+	   (preandflag == 0 || mod_chain_defer)){
+		if(preandflag == 0){
+			x_mod_on = 0;
+			set_mmlproc(6, 0, 0); /* 入れておく必要あり (6:modulation) */
+		}
+		if(local.oncho == 0){
+		 /* 音長0の音符(c0e2 のように書く和音の先頭)はステップを1つも
+		    消費しないので、local.gatetimeも0になる。この0の窓に対して
+		    「ディレイが収まるか」を判定しても必ず外れてしまい、遅延
+		    モジュレーションが永久に発行されなくなる。判定は、実際に
+		    長さを持つ次の音符まで持ち越す。
+		    set_mmlproc()に積んだ分は、この関数が音長0の音符に対して
+		    途中でreturnするためmmlproc[]に残り、次の音符の処理で
+		    書き出される。ステップが進んでいないのでディレイの値も
+		    そのままで良い */
+			mod_chain_defer = 1;
+		}else{
+			mod_chain_defer = 0;
+			if(mod_delay < local.gatetime){
+				if(mod_delay && mod_after)
+					set_mmlproc(6, mod_after, mod_delay);
+			}
 		}
 	}
 	for(i = 0; i < KIND_MAX; i++){

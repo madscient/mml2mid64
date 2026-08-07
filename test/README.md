@@ -1,11 +1,21 @@
 # Regression tests
 
-There are two suites.
+There are three suites.
 
 **Samples.** `baseline.sha256` records the SHA-256 of the SMF that each
 `sample/*.mml` compiles to. `ctest` (and `make -C src check`) recompiles every
 sample and compares against it, so any change that alters generated MIDI shows
 up immediately. The samples are not bundled — see below.
+
+**Bug fixes.** `regress/*.mml` pins down the fixes for the defects listed in
+`org-doc/todo.txt`, with `regress.sha256` as the baseline. It runs through the
+same `cmake/RunSampleTest.cmake` as the sample suite. `mod-chord.mml` covers the
+`M` command combined with a zero-length chord, `psw-tempo.mml` a tempo set
+across a `=1`/`=0` skip, and `psw-ichi.mml` an in-line `=1` leaking into the
+next track. `tempo-order.mml` is the control: it exercises the neighbouring
+cases those fixes must *not* change (multi-track tempo without any `=`,
+relative/push/pop tempo, and `FT` displacements). These MMLs were written for
+this fork and carry no third-party content, so this suite always runs.
 
 **Track names.** `trackname/*.mml` pins down the track-name grammar: the
 parallel notation and wildcards inherited from the original, and the optional
@@ -36,6 +46,22 @@ To enable the suite, fetch the original mml2mid 5.30b archive and copy its
 `baseline.sha256` is kept in the repository so the comparison still works when
 you do. It expects the samples exactly as distributed — EUC-JP encoded and
 byte-for-byte unmodified.
+
+## Regenerating the bug-fix baseline
+
+Only after deliberately changing generated output:
+
+```sh
+cd test/regress
+for m in *.mml; do
+    b=${m%.mml}
+    ../../src/mml2mid "$m" /tmp/o.mid >/dev/null 2>&1 || continue
+    printf '%s  %s\n' "$(sha256sum /tmp/o.mid | cut -d' ' -f1)" "$b"
+done > ../regress.sha256
+```
+
+A change to `tempo-order.mml`'s hash is a red flag: that file exists precisely
+to stay constant.
 
 ## How the tests run
 

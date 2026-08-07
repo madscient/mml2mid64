@@ -49,8 +49,10 @@ install : all
 
 # Compile every sample and compare against test/baseline.sha256.
 # See test/README.md for how that baseline was validated.
+# run-trackname.sh and run-regress.sh need no sample/, so they always run.
 check : all
 	@sh ../test/run-trackname.sh ./$(EXE)
+	@sh ../test/run-regress.sh ./$(EXE)
 	@sh ../test/run-baseline.sh ./$(EXE)
 
 clean :
