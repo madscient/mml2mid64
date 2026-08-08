@@ -21,6 +21,7 @@ add_executable(mml2mid
   src/mmlproc.c
   src/note.c
   src/charproc.c
+  src/macroexp.c
   src/file.c
 )
 

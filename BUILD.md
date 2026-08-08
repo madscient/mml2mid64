@@ -75,7 +75,7 @@ now **UTF-8**; the compiler's input data is left alone.
 | documentation (`org-doc/*.txt`, `doc/*.md`, `src/mml2mid.1`) | UTF-8 | converted with the character sequence verified identical |
 | `org-doc/tr-rack.mml` | **still EUC-JP** | see below |
 | `org-doc/mml2mid.def` | untouched | VZ editor definition file, contains binary |
-| `mmlpp/mmlpp.pl`, `tk/tkmml2mid.tcl` | still EUC-JP | programs, not documentation |
+| `mmlpp/mmlpp.pl`, `tk/tkmml2mid.tcl` | still EUC-JP | programs, not documentation (mmlpp's features are folded into the compiler now, so the script is kept only as part of the original distribution) |
 
 `.mml` files are compiler *input*, not documentation. mml2mid copies string
 bytes straight into SMF meta events (song title, track names), so re-encoding
@@ -99,7 +99,9 @@ those **do** add MML syntax and, in a few cases, change generated MIDI: the
 `Y` / `mv` / `mt` commands, `@(msb,lsb,prog)`, an argument for `P` / `X`, a
 second character in track names, backquote note-off and portamento source
 notes, the `#ampasandtie` and `#sysexsinglequote` directives, `~` note chains,
-and fixes for three of the defects the original author listed in
+the mmlpp features folded into the compiler (`${name}` long macro names,
+`${name:args}` macros with arguments, the `i`/`j` bend-value functions and
+`#bendrange`), and fixes for three of the defects the original author listed in
 `org-doc/todo.txt`. See [doc/CHANGES.md](doc/CHANGES.md) for the user-visible
 differences from the original and [doc/STATUS.md](doc/STATUS.md) for the change
 log. The original distribution's own documentation is kept verbatim in

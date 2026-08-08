@@ -7,15 +7,34 @@ There are three suites.
 sample and compares against it, so any change that alters generated MIDI shows
 up immediately. The samples are not bundled — see below.
 
-**Bug fixes.** `regress/*.mml` pins down the fixes for the defects listed in
-`org-doc/todo.txt`, with `regress.sha256` as the baseline. It runs through the
-same `cmake/RunSampleTest.cmake` as the sample suite. `mod-chord.mml` covers the
+**Bug fixes and new syntax.** `regress/*.mml` pins down the fixes for the
+defects listed in `org-doc/todo.txt`, plus the MML this fork added, with
+`regress.sha256` as the baseline. It runs through the same
+`cmake/RunSampleTest.cmake` as the sample suite. `mod-chord.mml` covers the
 `M` command combined with a zero-length chord, `psw-tempo.mml` a tempo set
 across a `=1`/`=0` skip, and `psw-ichi.mml` an in-line `=1` leaking into the
 next track. `tempo-order.mml` is the control: it exercises the neighbouring
 cases those fixes must *not* change (multi-track tempo without any `=`,
-relative/push/pop tempo, and `FT` displacements). These MMLs were written for
-this fork and carry no third-party content, so this suite always runs.
+relative/push/pop tempo, and `FT` displacements). `macro-long.mml`,
+`macro-args.mml`, `bend-ij.mml` and `bend-range.mml` cover the mmlpp features
+folded into the compiler — long macro names, macros with arguments, the `i`/`j`
+bend-value functions, and where the bend range comes from. These MMLs were
+written for this fork and carry no third-party content, so this suite always
+runs.
+
+The first three of those four are also checked against `mmlpp/mmlpp.pl`
+directly, since mmlpp is the reference implementation of what they express:
+
+```sh
+perl mmlpp/mmlpp.pl test/regress/macro-args.mml > /tmp/pp.mml
+src/mml2mid /tmp/pp.mml /tmp/a.mid
+src/mml2mid test/regress/macro-args.mml /tmp/b.mid
+cmp /tmp/a.mid /tmp/b.mid          # must be identical
+```
+
+The same holds for the sample MML embedded in `mmlpp/mmlppbnd.txt` (the lines
+below its `cut here` marker). `bend-range.mml` is excluded because it uses
+`#bendrange`, which mmlpp knows nothing about — that is the point of the file.
 
 **Track names.** `trackname/*.mml` pins down the track-name grammar: the
 parallel notation and wildcards inherited from the original, and the optional
@@ -74,9 +93,15 @@ directory, not relative to the including file. `08itsuka.mml` includes
 
 The baseline is not self-referential. It was checked against the `.mid` files
 that ship next to the samples, which were produced by the original pre-64-bit
-program:
+program. At the modernisation commit, where behaviour was still identical to
+the original:
 
-**28 of the 32 samples are byte-for-byte identical to the shipped `.mid`.**
+**28 of the 32 samples were byte-for-byte identical to the shipped `.mid`.**
+
+Three of this fork's later changes deliberately alter what four of the samples
+compile to, so **25 match today** — see "Samples this fork changed on purpose"
+below. That section is the audit trail for the remaining difference; the
+statement above is what the baseline was originally checked against.
 
 Reproducing that comparison needs two adjustments, because of how the
 distribution was assembled — neither is a property of the code:
@@ -113,6 +138,33 @@ like match. This is pre-existing skew between the shipped samples and the
 shipped source, not a regression — `tempo_conv()` was additionally
 differential-tested against the original implementation over 8,000,000
 `(tempo_master, tempo)` combinations with zero mismatches.
+
+## Samples this fork changed on purpose
+
+Four samples no longer compile to what they did in the original, because they
+exercise behaviour this fork deliberately changed. `baseline.sha256` records
+the new output for these; the entries were regenerated when the discrepancy was
+traced (2026-08-09). Nothing here is an encoding or line-ending artefact — the
+samples are uniformly EUC-JP with LF line endings, and converting them to CRLF
+changes no output byte.
+
+| Sample | Change | Effect |
+| --- | --- | --- |
+| `02nm63` | Sub-tracks written *after* the main track on the same line are no longer dropped (a side effect of the two-character track-name work; called out in `doc/CHANGES.md` as the one change that can alter generated MIDI) | Line 46 reads `ZA1ACJBDMN…`, so sub-track `1A` now gets emitted. Track count 28 → 29 |
+| `01mkr29` | `M` combined with a zero-length chord — one of the `org-doc/todo.txt` defects fixed | Delayed modulation is now emitted. +159 bytes |
+| `01mkr39` | same | +2094 bytes |
+| `01mkr40` | same | +525 bytes |
+
+How this was established, in case it needs re-checking:
+
+- Building the parent of the todo-fix commit (`30932dd`) reproduces the
+  *previous* `baseline.sha256` for 31 of 32 samples, including all three
+  `01mkr*`. Only `02nm63` differs there, because its change landed earlier with
+  the track-name work.
+- That build's output for the three `01mkr*` samples is exactly the size of the
+  shipped `.mid` (31217 / 88980 / 8314 bytes).
+- All four samples use `M`; none uses `=0` / `=1`, which rules out the other two
+  todo-list fixes.
 
 ## Cross-platform agreement
 
