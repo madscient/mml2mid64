@@ -65,6 +65,11 @@ struct tmap {
 #define TMAP_NORMAL 00		/* 普通のテンポ指定 */
 	int p1; /* テンポの値 */
 	long st;  /* ゲートタイム */
+	 /* デバッグマップ(-g)用。この指定を書いたソース上の位置。psw_lineは
+	    「最後に通った'='の行」であってこの指定自体の行ではないので、別に
+	    持つ必要がある。-g無しでも埋めるが、書き出さなければ害はない */
+	int dbg_line;
+	int dbg_file; /* dbgmap_fileidx()が返す添字 */
 };
 
 /* f,c,g,d,a,e,b → -1〜5 */

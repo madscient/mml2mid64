@@ -36,6 +36,7 @@
 #include "mmlproc.h"
 #include "mml2mid.h"
 #include "macroexp.h"
+#include "dbgmap.h"
 
 static fileptr fp0;	/* 入力ファイル(mml) */
 fileptr fp1;	/* プリプロセス後ファイル(mml)を書き込む */
@@ -125,6 +126,10 @@ int mskanji = 1;
 #endif
 int warnmode = 0;
 static int classic_behavior = 0;
+static int dbgmap_level = 0; /* -g で指定するデバッグマップの出力レベル */
+static char *dbgmap_file = NULL; /* デバッグマップの出力先。無効ならNULL */
+static int diag_mode = 0;    /* --diag=json が指定されたか */
+static const char *diag_mainfile = NULL; /* 入力MMLのファイル名 */
 
 static void format1to0(void);
 static int get1(int i);
@@ -179,10 +184,67 @@ err_nomem:
 	owari();
 }
 
+int diag_json_enabled(void)
+{
+	return diag_mode;
+}
+
+ /* 「ERROR!」「Warning:」の接頭辞を飛ばす。JSONのseverityと二重になるため */
+static const char *strip_severity(const char *s)
+{
+	static const char *const pre[] = { "ERROR!", "Warning:" };
+	size_t i;
+
+	for(i = 0; i < numberof(pre); i++){
+		size_t n = strlen(pre[i]);
+
+		if(!strncmp(s, pre[i], n)){
+			s += n;
+			while(*s == ' ' || *s == '\t') s++;
+			break;
+		}
+	}
+	return s;
+}
+
+void diag_json(const char *severity, int code, const char *file, int line,
+	       const char *message)
+{
+	if(!diag_mode) return;
+
+	fprintf(STDERR, "{\"severity\": ");
+	json_write_string(STDERR, severity);
+	fprintf(STDERR, ", \"code\": %d, \"file\": ", code);
+	json_write_string(STDERR, file != NULL ? file : diag_mainfile);
+	fprintf(STDERR, ", \"line\": %d, \"message\": ", line);
+	json_write_string(STDERR, strip_severity(message));
+	fprintf(STDERR, "}\n");
+	fflush(STDERR);
+}
+
+ /* 「--name」形式の長オプション。1文字スイッチと違い、まとめ書きはできない */
+static void long_option(const char *name)
+{
+	if(!strcmp(name, "diag=json")){
+		diag_mode = 1;
+		return;
+	}
+	fprintf(STDERR, "ERROR! unknown switch '--%s'\n", name);
+	sw();
+}
+
 static void options(char *opt, int *argcp, char ***argvp)
  /* Add Nide; オプション文字列optを解析し、*argcpと*argvpを進める */
 {
 	int c;
+
+	 /* 呼び出し側は先頭の「-」を落として渡してくるので、ここで「-」から
+	    始まっていれば元の引数は「--…」、つまり長オプション */
+	if(*opt == '-'){
+		long_option(opt + 1);
+		--*argcp, ++*argvp;
+		return;
+	}
 
 	while((c = *opt++) != '\0'){
 /* CASE_INSENSITIVE_OPTSがdefineされていると、オプションの大文字を小文字と
@@ -218,6 +280,19 @@ static void options(char *opt, int *argcp, char ***argvp)
 			     regard a space at top of line as comment-line */
 			classic_behavior ^= 1;
 			break;
+		case 'g': /* デバッグマップ(.mmlmap.json)を出力する。
+			     「-g」でレベル1(行テーブルのみ)、「-g2」で
+			     レベル2(イベントテーブルも)。数字の読み方は
+			     「-t」と同じで、後続の数字をそのまま取る。
+			     CASE_INSENSITIVE_OPTSで大小同一視されるので
+			     「-G」を別の意味に使ってはならない */
+			if(is_digit(*opt)){
+				dbgmap_level = atoi(opt);
+				while(is_digit(*opt)) opt++;
+			} else {
+				dbgmap_level = 1;
+			}
+			continue;
 		default:
 			fprintf(STDERR, "ERROR! unknown switch '%c'\n", c);
 			sw();
@@ -227,7 +302,9 @@ static void options(char *opt, int *argcp, char ***argvp)
 	--*argcp, ++*argvp;
 }
 
-#if defined(_WIN32)
+#if defined(__EMSCRIPTEN__)
+# define VER_TARGET " (WebAssembly version)"
+#elif defined(_WIN32)
 # define VER_TARGET " (Windows console version)"
 #elif defined(__APPLE__)
 # define VER_TARGET " (macOS version)"
@@ -268,6 +345,7 @@ int main(int argc, char *argv[])
 	 /* その次の引数がMMLファイル名 */
 	if(!argc--) sw();
 	srcfile = *argv++;
+	diag_mainfile = srcfile; /* --diag=json でファイル名が判らない時の既定 */
 
 /* USR_NONMINUS_OPTSが定義されていれば、MMLファイル名の次の引数が「-」で
    始まらない2文字以下の場合にそこ以降を無条件にオプション引数扱いする */
@@ -389,7 +467,29 @@ int main(int argc, char *argv[])
 	}
 	/* <<<<<<<<< -------- mid file open */
 
+	 /* デバッグマップ(-g)。イベントはanalyze()の中で記録されるので、
+	    有効化はanalyze()より前でなければならない */
+	if(dbgmap_level > 0){
+		if(!strcmp(outfile, stdio_name)){
+			fprintf(STDERR, "Warning: debug map not written "
+				"while output is stdout.\n");
+		} else if((dbgmap_file = dbgmap_path_for(outfile)) == NULL){
+			fputs(err_mem, STDERR);
+			fclose2(fp0);
+			owari();
+		} else {
+			dbgmap_enable(dbgmap_level);
+			dbgmap_mainfile(srcfile);
+			dbgmap_track(0, NULL); /* テンポマップは出力トラック0 */
+		}
+	}
+
 	analyze();
+	if(dbgmap_file != NULL){
+		dbgmap_write(dbgmap_file, timebase, fmat);
+		free(dbgmap_file), dbgmap_file = NULL;
+		dbgmap_free();
+	}
 	msg_flush();
 	ffree(fp1);
 	return 0; /* 正常終了 */
@@ -410,6 +510,9 @@ MML_NORETURN static void sw(void)   /* Usage */
 #endif
 		"             -w  : Only warning on unrecognized symbols\n"
 		"             -c  : Classic undocumented behavior\n"
+		"             -g  : Write a debug map (.mmlmap.json) beside the MIDI\n"
+		"             -g2 : ... including the per-event table\n"
+		"       --diag=json : Also report errors as one JSON object per line\n"
 #if !defined(MSG_TO_STDOUT)
 		"\tInput and output filenames can be \"-\" (which means stdin/stdout).\n"
 #else
@@ -817,6 +920,10 @@ static int getLine_cooked(prepro_linebuf *lbuf)
     sにMsgを渡してもよい(先にtext_cat()で退避してから組み立てるため) */
 MML_NORETURN void prepro_msg_error(const char *s, int lineno, const char *curfile)
 {
+	 /* sにはMsgが渡ることがあり、下のmsg_printf()で壊れるので先に控える */
+	char saved[sizeof(Msg)];
+
+	snprintf(saved, sizeof(saved), "%s", s);
 	text_cat(s);
 	if(curfile != NULL){
 		msg_printf(" in line %d. <%s>\n", lineno, curfile);
@@ -824,6 +931,10 @@ MML_NORETURN void prepro_msg_error(const char *s, int lineno, const char *curfil
 		msg_printf(" in line %d.\n", lineno);
 	}
 	text_cat(Msg);
+	if(diag_mode){
+		msg_flush(); /* 人間向けを先に出し切ってから1行JSONを続ける */
+		diag_json("error", 0, curfile, lineno, saved);
+	}
 	remove_file_and_owari1();
 }
 

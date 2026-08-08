@@ -1,0 +1,5 @@
+; [ ]ループ。展開されても行番号が呼び出し行に戻ること
+; (charproc.cのkloop[].start_lineによる退避・復元の確認)。
+A C1 o4 l4
+A [cde]2
+A f

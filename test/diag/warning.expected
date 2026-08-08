@@ -1,0 +1,1 @@
+{"severity": "warning", "code": 2, "file": "warning.mml", "line": 2, "message": "loop out '/' is obsolete (please use ':' instead)"}

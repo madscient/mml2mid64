@@ -10,6 +10,8 @@
 #include "file.h"
 #include "charproc.h"
 #include "mmlproc.h"
+#include "mml2mid.h"
+#include "dbgmap.h"
 
 #define MAX_TEXT_STR 256
 
@@ -65,6 +67,14 @@ int head;		/* 従属パートでヘッダを書いたかどうかのフラグ */
 long tstep;		/* トラックの現在のステップタイム */
 int kloop_ptr;		/* ループネスト数 */
 int cur_line;		/* 現在のMMLソース上の行番号 */
+ /* 今処理しているコマンドが書かれていたソース上の位置。デバッグマップ(-g)用。
+    cur_lineをそのまま使うことはできない。先読み(length()やgetbyte(1))が行末を
+    越えると cur_line が先へ進み、行の最後の音符が次の行のものとして記録されて
+    しまうためである。#includeの復元(ppinfo)も同じ理由で発行時には当てにできない
+    ので、行番号もファイルもコマンドを取り出した時点で解決して控えておく。
+    cur_cmd_lineは解決済み(元ソース上の1始まりの行番号)であることに注意 */
+int cur_cmd_line;
+int cur_cmd_file;	/* dbgmap_fileidx()が返す添字 */
 int cur_ch;		/* 現在のチャンネル */
 int run;		/* ランニングステータス */
 int octave;		/* オクターブ */
@@ -309,6 +319,9 @@ static void put_cntchange0(int p1, int p2)
 	}
 	putc2(p1, fp2);
 	putc2(p2, fp2);
+	 /* RPN/NRPNもここを通る(CC 98,99,100,101,6として現れる)ので、
+	    write_rpn()/write_nrpn0()に別途フックを置いてはならない */
+	dbgmap_event(DBG_CC, -1, p1, p2);
 }
 
 /* bend を書くかどうかをチェックする関数 */
@@ -348,6 +361,7 @@ static void put_bend0(int p)
 	}
 	putc2(p % 128, fp2);
 	putc2(p / 128, fp2);
+	dbgmap_event(DBG_BEND, -1, p % 128, p / 128);
 }
 
 /* RPN書き込み */
@@ -417,7 +431,8 @@ int converttrk(void)
 	    のでmaster_countの初期値は-1 */
 	last_oddlen.pos = -1; /* 従属track位置合わせ失敗チェック用変数初期化 */
 
-	cur_line = 1; /* 行番号 = 1 から読み始める */
+	cur_line = cur_cmd_line = 1; /* 行番号 = 1 から読み始める */
+	cur_cmd_file = 0;
 	kloop_ptr = 0; /* ループネスト数 = 0 */
 	cur_ch = 0; /* 現在処理中のMIDIチャンネル */
 	run = 0; /* ランニングステータス初期化 */
@@ -503,6 +518,14 @@ int converttrk(void)
 	}
 	for(;;){
 		code = getbyte(0);
+		 /* この時点の位置がコマンドの書かれていた場所。この後の
+		    do_command()内の先読みで進んでしまう前に控えておく */
+		{
+			const char *f;
+
+			cur_cmd_line = resolve_src_line(cur_line, &f);
+			cur_cmd_file = dbgmap_fileidx(f);
+		}
 		if(code == -1 || code == '!'){
 			getbyte(-1);
 			msg_printf(" %6ld step%c \"%s\"\n",
@@ -770,6 +793,7 @@ static void setpsw(void)
 			putc2(0xc0 + cur_ch, fp2);
 			run= 0xc;
 			putc2(prog, fp2);
+			dbgmap_event(DBG_PROG, -1, prog, 0);
 			write_length(0, fp2);
 		}
 		if(mod_on != -1) put_mod(mod_on);
@@ -917,6 +941,9 @@ void write_tmap(void)
 			putc2(log2i(tmap[i].p1 % 100), fp3);
 			putc2(0x18, fp3);
 			putc2(8, fp3);
+			dbgmap_tempo_event(DBG_BEAT, tmap[i].st,
+				tmap[i].p1 / 100, tmap[i].p1 % 100,
+				tmap[i].dbg_line, tmap[i].dbg_file);
 			continue;
 
 		case TMAP_DIFF: /* temporally add tempo */
@@ -960,6 +987,8 @@ void write_tmap(void)
 		putc2((char)(i4>>16),fp3);
 		putc2((char)(i4>>8), fp3);
 		putc2((char)i4,	fp3);
+		dbgmap_tempo_event(DBG_TEMPO, tmap[i].st, (int)i4, 0,
+			tmap[i].dbg_line, tmap[i].dbg_file);
 	}
 	write_length(0, fp3);
 	if(tempo_stack.ptr != 0){
@@ -988,6 +1017,10 @@ static void add_tmap(int map, int num, long step)
 	tmap[tmap_ptr].map = map;
 	tmap[tmap_ptr].p1 = num;
 	tmap[tmap_ptr].st = step;
+	 /* 書き出しはwrite_tmap()、つまり全トラックを変換し終えた後なので、
+	    位置はここで控えておく必要がある(cur_cmd_*は解決済み) */
+	tmap[tmap_ptr].dbg_line = cur_cmd_line;
+	tmap[tmap_ptr].dbg_file = cur_cmd_file;
 	tmap_ptr++;
 	tmap_realloc();
 }
@@ -1100,6 +1133,7 @@ static void cpres0(void)
 			run = 0xd;
 		}
 		putc2(cpres, fp2);
+		dbgmap_event(DBG_CPRES, -1, cpres, 0);
 		write_length(0, fp2);
 	}
 }
@@ -1121,6 +1155,7 @@ static void put_cpres0(int x)
 		run = 0xd;
 	}
 	putc2(x, fp2);
+	dbgmap_event(DBG_CPRES, -1, x, 0);
 }
 
 /* BRコマンドの処理 */
@@ -1299,6 +1334,7 @@ static void put_progchange(void)
 		run= 0xc;
 	}
 	putc2(prog, fp2);
+	dbgmap_event(DBG_PROG, -1, prog, 0);
 	write_length(0, fp2);
 }
 
@@ -1745,6 +1781,9 @@ static void getexclusive(int x)
 	for(i = 0; i < ex_pnt; i++){
 		putc2(exclusive[i], fp2);
 	}
+	 /* d1にはデータ長を入れておく。中身まで持たせても統合環境では使い道が
+	    無く、マップが徒に大きくなるだけなので */
+	dbgmap_event(DBG_SYSEX, -1, ex_pnt, 0);
 	write_length(0, fp2);
 }
 
@@ -2112,6 +2151,7 @@ static void mastervolume(void)
 	putc2(0, fp2);		/* LSB */
 	putc2(num, fp2);	/* MSB */
 	putc2(0xf7, fp2);
+	dbgmap_event(DBG_SYSEX, -1, 7, num);
 	write_length(0, fp2);
 }
 
@@ -2134,6 +2174,7 @@ static void masterfinetune(void)
 	putc2(num & 0x7f, fp2);	/* LSB */
 	putc2((num >> 7) & 0x7f, fp2);	/* MSB */
 	putc2(0xf7, fp2);
+	dbgmap_event(DBG_SYSEX, -1, 7, num);
 	write_length(0, fp2);
 }
 
@@ -2511,7 +2552,11 @@ void mml_err(int i)
     iの値によっては呼び出し時のMsgの内容がメッセージに入る */
 {
 	int err_line;
-	char *err_file;
+	const char *err_file;
+	 /* --diag=json 用。Msgは下のmsg_printf()で壊れるので、ここで組み立てて
+	    おく。人間向けのメッセージ(text[])とは接頭辞の有無だけが違う */
+	char diag[sizeof(Msg)];
+	const char *base = i > 0 ? err_msgs[i] : warn_msgs[-i];
 
 	if(i > 0){
 		text_cat("ERROR!  ");
@@ -2525,24 +2570,30 @@ void mml_err(int i)
 	case 65:
 		text_cat(Msg);
 		text_cat("'");
+		snprintf(diag, sizeof(diag), "%s%s'", base, Msg);
 		break;
 	case -1:
 		text_cat(Msg);
 		text_cat("'; ignored");
+		snprintf(diag, sizeof(diag), "%s%s'; ignored", base, Msg);
+		break;
+	default:
+		snprintf(diag, sizeof(diag), "%s", base);
 		break;
 	}
 
-	err_line = cur_line, err_file = NULL;
-	if(ppinfo . fname != NULL){
-		err_line += ppinfo.line - ppinfo.actual_line - 1;
-		if(*ppinfo . fname) err_file = ppinfo . fname;
-	}
+	err_line = resolve_src_line(cur_line, &err_file);
 	if(err_file == NULL){
 		msg_printf(" in line %d.\n", err_line);
 	} else {
 		msg_printf(" in line %d. <%s>\n", err_line, err_file);
 	}
 	text_cat(Msg);
+	if(diag_json_enabled()){
+		msg_flush(); /* 人間向けを先に出し切ってから1行JSONを続ける */
+		diag_json(i > 0 ? "error" : "warning", i > 0 ? i : -i,
+			err_file, err_line, diag);
+	}
 	if(i < 0){
 		msg_flush();
 	} else {
@@ -2556,6 +2607,15 @@ void write_header(void)
 	text_cat(Msg);
 	if(++trknum >= MAXTRKNUM) mml_err(60);
 	smftrkheader(fp2, &trksize);
+	if(dbgmap_enabled()){
+		char id[16];
+
+		 /* 出力トラック番号は trknum。テンポマップが0で、MMLトラックは
+		    1から。チャンネルはここではまだ確定しない(Cコマンドは
+		    ヘッダを書いた後に処理される)ので dbgmap_event() が埋める */
+		snprintf(id, sizeof(id), "%d%s", tnum, trkname_str(talf));
+		dbgmap_track(trknum, id);
+	}
 }
 
 static void get_trackname(void)
@@ -2580,6 +2640,8 @@ static void write_trackname(void)
 	for(i = 0; i < len; i++){
 		putc2(trackname[i], fp2);
 	}
+	dbgmap_trackname(trknum, trackname);
+	dbgmap_event(DBG_META, -1, 3, (int)len);
 	write_length(0, fp2);
 }
 
@@ -2626,6 +2688,7 @@ static void put_midistring(int x)
 	putc2(x, fp2);
 	putc2((int)len, fp2);
 	for(i = 0; i < len; i++) putc2(t[i], fp2);
+	dbgmap_event(DBG_META, -1, x, (int)len);
 	write_length(0, fp2);
 }
 

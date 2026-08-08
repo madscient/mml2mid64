@@ -35,6 +35,27 @@ ctest --test-dir build -C Release
 
 Install with `cmake --install build --prefix /usr/local`.
 
+## WebAssembly (Emscripten)
+
+For embedding the compiler in the [mml2mid64ide](../mml2mid64ide) VS Code
+extension.  No source change is needed -- `src/file.c` already keeps all I/O in
+memory, and everything else this program uses is in Emscripten's POSIX layer.
+
+```sh
+emcmake cmake -S . -B build-wasm
+cmake --build build-wasm
+node wasm/smoke.mjs build-wasm/mml2mid.mjs
+```
+
+The result is `build-wasm/mml2mid.mjs` (an ES module exporting the factory
+`createMml2mid()`) plus `build-wasm/mml2mid.wasm`.  The ctest suites are
+disabled in this configuration -- they run the compiler as a plain executable,
+which a WASM build is not; `wasm/smoke.mjs` covers it instead.
+
+> **This target has never been built or run.**  It was written on a machine
+> without emsdk or Node.  Expect to adjust the link flags on first use.  See
+> [wasm/README.md](wasm/README.md).
+
 ## Makefile (Linux, macOS, *BSD, MinGW)
 
 ```sh

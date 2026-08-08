@@ -51,6 +51,7 @@ GUIフロントエンド（`tk/`）、および配布物の説明（[readme.txt]
 | --- | --- |
 | [doc/CHANGES.md](doc/CHANGES.md) | **オリジナル版との差分**（エンドユーザー向け。MMLの拡張など） |
 | [doc/STATUS.md](doc/STATUS.md) | 変更履歴（開発側の作業記録） |
+| [doc/DEBUGMAP.md](doc/DEBUGMAP.md) | `-g` が出すデバッグマップと `--diag=json` の形式仕様 |
 | [BUILD.md](BUILD.md) | ビルド方法とモダナイズの技術的詳細 |
 
 概要は「[モダナイズの概要](#モダナイズの概要)」にもあります。
@@ -177,9 +178,10 @@ ctest --test-dir build -C Release   # Windows / Visual Studio
 | --- | --- |
 | `src/` | ソースプログラムと Makefile |
 | `org-doc/` | **オリジナルのドキュメント類**（MMLリファレンス、テクニック集など。内容は変更していません） |
-| `doc/` | 本フォークのドキュメント（[CHANGES.md](doc/CHANGES.md)、[STATUS.md](doc/STATUS.md)） |
+| `doc/` | 本フォークのドキュメント（[CHANGES.md](doc/CHANGES.md)、[STATUS.md](doc/STATUS.md)、[DEBUGMAP.md](doc/DEBUGMAP.md)） |
 | `test/` | 回帰テスト用のベースライン・トラック名テスト・スクリプト（サンプル曲は非同梱） |
 | `cmake/` | ctest から呼ばれるテスト実行スクリプト |
+| `wasm/` | WebAssemblyビルドの手順とスモークテスト（**未検証**） |
 | `mmlpp/` | mml2mid用プリプロセッサ（Perlスクリプト）。**本フォークでは機能を本体に取り込んだので通常は不要です**（[doc/CHANGES.md](doc/CHANGES.md#外部プリプロセッサ-mmlpp-について)） |
 | `tk/` | Tcl/Tk製のGUIフロントエンド tkmml2mid |
 
