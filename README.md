@@ -181,7 +181,7 @@ ctest --test-dir build -C Release   # Windows / Visual Studio
 | `doc/` | 本フォークのドキュメント（[CHANGES.md](doc/CHANGES.md)、[STATUS.md](doc/STATUS.md)、[DEBUGMAP.md](doc/DEBUGMAP.md)） |
 | `test/` | 回帰テスト用のベースライン・トラック名テスト・スクリプト（サンプル曲は非同梱） |
 | `cmake/` | ctest から呼ばれるテスト実行スクリプト |
-| `wasm/` | WebAssemblyビルドの手順とスモークテスト（**未検証**） |
+| `wasm/` | WebAssemblyビルドの手順とスモークテスト |
 | `mmlpp/` | mml2mid用プリプロセッサ（Perlスクリプト）。**本フォークでは機能を本体に取り込んだので通常は不要です**（[doc/CHANGES.md](doc/CHANGES.md#外部プリプロセッサ-mmlpp-について)） |
 | `tk/` | Tcl/Tk製のGUIフロントエンド tkmml2mid |
 

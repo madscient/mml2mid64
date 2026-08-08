@@ -20,9 +20,14 @@ const SRC = ["A C1 o4 l4 cdef", "A gab>c", ""].join("\n");
 
 // Run one compilation in a fresh instance.  Returns stdout/stderr and whatever
 // the run left in the in-memory filesystem.
+//
+// Emscripten's Node shell assigns process.exitCode when the program exits, so a
+// deliberately failing compilation would otherwise decide this script's exit
+// status.  Save and restore it around the call.
 async function compile(args, files) {
   const out = [];
   const err = [];
+  const savedExitCode = process.exitCode;
   const mod = await createMml2mid({
     noInitialRun: true,
     print: (s) => out.push(s),
@@ -49,12 +54,15 @@ async function compile(args, files) {
       return null;
     }
   };
+  process.exitCode = savedExitCode;
   return { status, out: out.join("\n"), err: err.join("\n"), read };
 }
 
+let failures = 0;
+
 function check(label, ok, detail = "") {
   console.log(`${ok ? "ok  " : "FAIL"}  ${label}${detail ? "  -- " + detail : ""}`);
-  if (!ok) process.exitCode = 1;
+  if (!ok) failures++;
 }
 
 // --- 1. a normal compilation with -g2 -----------------------------------
@@ -130,4 +138,5 @@ function check(label, ok, detail = "") {
   }
 }
 
-console.log(process.exitCode ? "\nSMOKE TEST FAILED" : "\nall checks passed");
+process.exitCode = failures ? 1 : 0;
+console.log(failures ? `\n${failures} CHECK(S) FAILED` : "\nall checks passed");

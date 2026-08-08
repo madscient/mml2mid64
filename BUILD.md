@@ -42,7 +42,7 @@ extension.  No source change is needed -- `src/file.c` already keeps all I/O in
 memory, and everything else this program uses is in Emscripten's POSIX layer.
 
 ```sh
-emcmake cmake -S . -B build-wasm
+emcmake cmake -S . -B build-wasm -G Ninja
 cmake --build build-wasm
 node wasm/smoke.mjs build-wasm/mml2mid.mjs
 ```
@@ -52,9 +52,13 @@ The result is `build-wasm/mml2mid.mjs` (an ES module exporting the factory
 disabled in this configuration -- they run the compiler as a plain executable,
 which a WASM build is not; `wasm/smoke.mjs` covers it instead.
 
-> **This target has never been built or run.**  It was written on a machine
-> without emsdk or Node.  Expect to adjust the link flags on first use.  See
-> [wasm/README.md](wasm/README.md).
+`-G Ninja` is required on Windows: the default Visual Studio generator cannot
+drive Emscripten.  If `emcmake` reports "No CMAKE_C_COMPILER could be found",
+an existing `CMAKE_TOOLCHAIN_FILE` in the environment (vcpkg sets one) is
+suppressing Emscripten's; see [wasm/README.md](wasm/README.md).
+
+The WASM build produces byte-identical output to the native one -- both the SMF
+and the debug map -- across every MML under `test/`.
 
 ## Makefile (Linux, macOS, *BSD, MinGW)
 
