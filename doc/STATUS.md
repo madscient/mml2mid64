@@ -21,6 +21,7 @@
 | MSVC 19.51（VS 18） | Windows x64 | `/W3` で警告ゼロ、サンプル回帰テスト 33/33 合格 |
 | GCC 10 | Debian x86-64 | `-O2 -Wall -Wextra` で警告ゼロ、サンプル回帰テスト 33/33 合格 |
 | clang 21（clang-cl） | Windows x64 | エラー・実質的な警告なし |
+| Emscripten 6.0.6 | WebAssembly (Node 24.19) | 警告ゼロ。SMF・デバッグマップともネイティブ版とバイト一致 |
 
 生成MIDIは、決定的な32サンプル全てで上記ビルド間がバイト単位で一致します。
 
@@ -188,9 +189,10 @@ MIDI tick と MML ソース行の対応表を `.mmlmap.json` として出力す�
 POSIX層にある関数だけのため）。VS Code の拡張機能ホストは Node なので、`NODEFS` で
 実ワークスペースをマウントすれば `#include` もそのまま解決できる。
 
-> **⚠ 未検証。** 作業環境に emsdk / Node が無いため、**一度もビルド・実行して
-> いない。** 最初に使うときは `node wasm/smoke.mjs` を通すところまで確認し、
-> 必要ならリンクフラグを調整すること。詳細は [wasm/README.md](../wasm/README.md)。
+Emscripten 6.0.6 / Node 24.19.0 / CMake 4.3.3 + Ninja で検証済み。警告ゼロで
+ビルドでき、**生成されるSMFもデバッグマップもネイティブ版(MSVC)とバイト単位で
+一致する**（`test/` 配下の全24 MMLで確認）。手順とハマりどころは
+[wasm/README.md](../wasm/README.md)。
 
 #### テスト
 
