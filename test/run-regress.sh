@@ -4,9 +4,9 @@
 #   usage: test/run-regress.sh [path-to-mml2mid]
 #
 # These MMLs pin down the fixes for the defects listed in org-doc/todo.txt,
-# plus the neighbouring cases those fixes must not change.  They are written
-# for this fork and carry no third-party content, so unlike the sample suite
-# this one always runs.
+# plus the neighbouring cases those fixes must not change, plus the MML syntax
+# this fork added.  They are written for this fork and carry no third-party
+# content, so unlike the sample suite this one always runs.
 #
 # The CMake build runs the same checks through cmake/RunSampleTest.cmake.
 

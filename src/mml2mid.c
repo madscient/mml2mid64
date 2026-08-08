@@ -30,10 +30,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 #include "file.h"
 #include "charproc.h"
 #include "mmlproc.h"
 #include "mml2mid.h"
+#include "macroexp.h"
 
 static fileptr fp0;	/* 入力ファイル(mml) */
 fileptr fp1;	/* プリプロセス後ファイル(mml)を書き込む */
@@ -60,6 +62,8 @@ char track_map[TRKMAP_SIZE];	/* MKR追加 */
 int backcompati;
 int ampasandtie = 0; /* &をタイ/スラーとして解釈するスイッチ(doc/CHANGES.md参照) */
 int sysexsinglequote = 0; /* EX中の文字列埋め込みを"..."でなく'...'にするスイッチ */
+int bend_range = 2;	/* i/j によるベンド値算出の基準(半音数)。mmlppbnd.txtと同じく既定は2 */
+int bend_range_fixed = 0; /* 「#bendrange」で明示されたら1。${_bend_range_}より優先 */
 
  /* SMFのトラック数フィールドは16ビットなので、それを超えてはならない */
 typedef char mml2mid_maxtrknum_fits_in_smf[MAXTRKNUM <= 65535 ? 1 : -1];
@@ -100,7 +104,7 @@ static void getsp(char *, fileptr, fileptr);
 static void getppinfo(char *, prepro_linebuf *, fileptr);
 static void getinclude(char *, prepro_linebuf *, fileptr);
 static void gettitle(const char *, char *, prepro_linebuf *);
-static int getintdirective(char *, const char *, prepro_linebuf *);
+static int getintdirective(char *, const char *, prepro_linebuf *, int, int);
 static int getbooldirective(char *, const char *, prepro_linebuf *);
 static char *geteos(prepro_linebuf *, char *, int, int);
 static void getswap(char *, prepro_linebuf *);
@@ -555,6 +559,14 @@ static void analyze(void)
 	getsp(NULL, fp0, fp1);	/* #コマンドの取得 fp0 -> fp1 に書き込まれる */
 	fclose2(fp0);		/* 元のMMLファイル(fp0)は閉じる */
 
+	 /* 「${名前}」「${名前:引数}」の展開。1入力行＝1出力行なので行番号は
+	    ずれない。「$a」は手を付けずに scanmacro() へ渡す */
+	{
+		fileptr fpm = expand_macros(fp1);
+
+		ffree(fp1), fp1 = fpm;
+	}
+
 	/* やりたくないが... */
 
 	fseek2(fp1, 0L, SEEK_SET);	/* ファイルの先頭に移動 */
@@ -801,19 +813,24 @@ static int getLine_cooked(prepro_linebuf *lbuf)
 	}
 }
 
-MML_NORETURN static void prepro_error(const char *s, prepro_linebuf *lbuf)
+ /* macroexp.c からも呼ぶので、prepro_linebufに依存しない形にしてある。
+    sにMsgを渡してもよい(先にtext_cat()で退避してから組み立てるため) */
+MML_NORETURN void prepro_msg_error(const char *s, int lineno, const char *curfile)
 {
-	char *curfile;
-
 	text_cat(s);
-	curfile = lbuf->virt_curfile != NULL ? lbuf->virt_curfile : lbuf->curfile;
 	if(curfile != NULL){
-		msg_printf(" in line %d. <%s>\n", lbuf->lineno, curfile);
+		msg_printf(" in line %d. <%s>\n", lineno, curfile);
 	} else {
-		msg_printf(" in line %d.\n", lbuf->lineno);
+		msg_printf(" in line %d.\n", lineno);
 	}
 	text_cat(Msg);
 	remove_file_and_owari1();
+}
+
+MML_NORETURN static void prepro_error(const char *s, prepro_linebuf *lbuf)
+{
+	prepro_msg_error(s, lbuf->lineno,
+		lbuf->virt_curfile != NULL ? lbuf->virt_curfile : lbuf->curfile);
 }
 MML_NORETURN static void prepro_illdirective(prepro_linebuf *lbuf)
 {
@@ -830,6 +847,11 @@ MML_NORETURN static void prepro_illcont(prepro_linebuf *lbuf)
 MML_NORETURN static void prepro_nomem(void) /* プリプロセス中にメモリ不足 */
 {
 	text_cat("ERROR! Cannot allocate memory while reading input lines\n");
+	remove_file_and_owari1();
+}
+MML_NORETURN void prepro_msg_nomem(void) /* マクロ展開中にメモリ不足 */
+{
+	text_cat("ERROR! Cannot allocate memory while expanding macros\n");
 	remove_file_and_owari1();
 }
 
@@ -903,7 +925,8 @@ static void getsp(char *curfile, fileptr fpi, fileptr fpo)
 				} else
 				if(!strncmp(p, "timebase", len)){
 					timebase =
-					 getintdirective(q, "timebase", &lbuf);
+					 getintdirective(q, "timebase", &lbuf,
+							 0, INT_MAX);
 					putc2('\n', fpo);
 				} else
 				if(!strncmp(p, "swap", len)){
@@ -922,7 +945,8 @@ static void getsp(char *curfile, fileptr fpi, fileptr fpo)
 				} else
 				if(!strncmp(p, "xtempo", len)){
 					tempo_master =
-					  getintdirective(q, "xtempo", &lbuf);
+					  getintdirective(q, "xtempo", &lbuf,
+							  0, INT_MAX);
 					putc2('\n', fpo);
 				} else
 				if(!strncmp(p, "ampasandtie", len)){
@@ -933,6 +957,14 @@ static void getsp(char *curfile, fileptr fpi, fileptr fpo)
 				if(!strncmp(p, "sysexsinglequote", len)){
 					sysexsinglequote =
 					  getbooldirective(q, "sysexsinglequote", &lbuf);
+					putc2('\n', fpo);
+				} else
+				if(!strncmp(p, "bendrange", len)){
+					 /* 0はゼロ除算、24はRPN0の上限 */
+					bend_range =
+					  getintdirective(q, "bendrange", &lbuf,
+							  1, 24);
+					bend_range_fixed = 1;
 					putc2('\n', fpo);
 				} else {
 					prepro_illdirective(&lbuf);
@@ -1027,8 +1059,9 @@ static void gettitle(const char *kind, char *p, prepro_linebuf *lbuf)
 	msg_flush();
 }
 
+ /* min〜maxの範囲外もエラー。範囲を問わない場合は0とINT_MAXを渡す */
 static int getintdirective(char *p, const char *directivename,
-			   prepro_linebuf *lbuf)
+			   prepro_linebuf *lbuf, int min, int max)
 {
 	int ret;
 	char *q;
@@ -1036,6 +1069,7 @@ static int getintdirective(char *p, const char *directivename,
 	for(q = p; is_digit(*q); q++);
 	if(p == q || *next_nonsp(q)) prepro_illdirective(lbuf);
 	ret = atoi(p);
+	if(ret < min || ret > max) prepro_illdirective(lbuf);
 
 	msg_printf("%s: %d\n", directivename, ret);
 	text_cat(Msg);

@@ -26,8 +26,8 @@ LIBS    =
 INSTALL = install
 
 EXE  = mml2mid
-OBJS = file.o charproc.o note.o mmlproc.o mml2mid.o
-HDRS = compat.h file.h charproc.h mmlproc.h mml2mid.h
+OBJS = file.o charproc.o macroexp.o note.o mmlproc.o mml2mid.o
+HDRS = compat.h file.h charproc.h macroexp.h mmlproc.h mml2mid.h
 
 all : $(EXE)
 

@@ -1,0 +1,15 @@
+; ベンドレンジの与え方。「#bendrange」が本フォークのディレクティブで、
+; マクロ ${_bend_range_} は mmlpp 向けに書かれたMMLをそのまま通すための互換。
+; 両方書いた場合は「#bendrange」が勝つ。
+;
+; このMMLは bend-ij.mml とベンドレンジが同じ8になるので、#bendrange が効いて
+; いれば ${_bend_range_} の2は無視される。
+#timebase 48
+
+#bendrange 8
+${_bend_range_}	2
+
+A	BR8
+A	o4 l4 q1 v100
+A	BSi1 BSi2 BSi4 BSi8 BSi-8 BSi0
+A	FB1, 0, 4,j-2 a4 FB0

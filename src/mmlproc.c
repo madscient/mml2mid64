@@ -33,6 +33,7 @@ extern int x68k2;
 MML_NORETURN extern void remove_file_and_owari(void);
 extern int german_scale, backcompati, mskanji, warnmode;
 extern int sysexsinglequote; /* EX中の文字列埋め込みを"..."でなく'...'にするスイッチ */
+extern int bend_range; /* 「i」「j」によるベンド値算出の基準(半音数) */
 
 /* note.c からの extern */
 extern int andflag;     /* &があったかどうかのフラグ */
@@ -119,6 +120,7 @@ static void add_tmap(int, int, long);
 static void beat(void);		/* BTコマンド処理 */
 static void bendrange(void);	/* BRコマンドの処理 */
 static void bendset(int);	/* BS, BW, BBコマンドの処理 */
+static int bend_semitone(int);	/* 「i半音数」「j半音数」の処理 */
 static int log2i(int i);	/* log(2,i) */
 static void getgatetime(void);
 static void getgatetimeQ(void);
@@ -2192,6 +2194,41 @@ int length(void)
   x??で16進数の指定ができる．ただし，xの後は必ず2バイトで指定する。
   xの後の3バイト目以降は無視する。符号付きの16進数も指定できる。-x2fなど
 */
+/*
+   「i半音数」「j半音数」の処理。xget()から呼ばれる。
+
+   基準となるベンドレンジは「#bendrange」またはマクロ「${_bend_range_}」で
+   与える(既定は2)。「i」は「~」「BS」用の0〜127を、「j」は「FB」「UB」用の
+   -64〜63を返す。符号は「i-2」のように文字の後に書く。
+
+   算出手順は mmlpp.pl の bendexp() と同じで、範囲外を丸める前にクランプする。
+   ベンドレンジで割り切れない半音数は正確な音程にならない(mmlppbnd.txtの制限と
+   同じ)。
+   */
+static int bend_semitone(int fn)
+{
+	int sign = 1, digits = 0, n = 0, code;
+	double val;
+
+	(void)getbyte(2);	/* 「i」または「j」を捨てる */
+	code = getbyte(1);
+	if(code == '-' || code == '+'){
+		if(code == '-') sign = -1;
+		(void)getbyte(2);
+		code = getbyte(1);
+	}
+	for(; is_digit(code); code = getbyte(1)){
+		(void)getbyte(2);
+		n = n * 10 + dtoi(code);
+		digits++;
+	}
+	if(!digits) mml_err(82);
+
+	val = 64.0 * (sign * n) / bend_range + 64.0;
+	if(val > 127.0) val = 127.0; else if(val < 0.0) val = 0.0;
+	return (int)(val + 0.5) - (fn == 'j' ? 64 : 0);
+}
+
 int xget(int *i)
 {
 	int index;
@@ -2238,6 +2275,10 @@ int xget(int *i)
 		else if(cur_ch < 9) num = cur_ch + 1;
 		else num = cur_ch;
 		(void)getbyte(2);
+		break;
+	case 'i': /* 半音数からピッチベンド値を算出する (mmlpp互換) */
+	case 'j':
+		num = bend_semitone(code);
 		break;
 	case 'x': /*「x」で始まる16進数 */
 		goto get_hex;
@@ -2455,6 +2496,7 @@ static char *err_msgs[] = {
 	"no such a command 'm?'",
 	"master volume 'mv?' is wrong",	/* 80 */
 	"master fine tune 'mt?' is wrong",
+	"bend value 'i?' or 'j?' is wrong",
 };
 
 static char *warn_msgs[] = {
