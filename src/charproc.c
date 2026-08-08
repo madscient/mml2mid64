@@ -739,6 +739,22 @@ static void check_master_step_amount(void)
 	}
 }
 
+ /* コンパイル中の行番号(cur_line)を、#includeを展開する前の元ソース上の位置へ
+    戻す。ppinfoは「# 行番号 "ファイル名"」マーカを読んだ時点の対応を保持して
+    いる。*fnameには元ファイル名(主ファイルならNULL)を返す。
+    mml_err()とdbgmap_event()の両方から呼ぶ。二重に実装すると必ず食い違う */
+int resolve_src_line(int line, const char **fname)
+{
+	const char *f = NULL;
+
+	if(ppinfo . fname != NULL){
+		line += ppinfo.line - ppinfo.actual_line - 1;
+		if(*ppinfo . fname) f = ppinfo . fname;
+	}
+	if(fname != NULL) *fname = f;
+	return line;
+}
+
 static void read_ppinfo(void)/* Add Nide, 外部プリプロセッサからの情報の処理 */
 {
 	int c, i, amount = 0, escape;

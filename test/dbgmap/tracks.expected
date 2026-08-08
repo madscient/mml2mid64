@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "generator": "mml2mid 5.30b (mml2mid64 fork)",
+  "level": 2,
+  "timebase": 48,
+  "format": 1,
+  "files": ["tracks.mml"],
+  "tracks": [
+    {"index": 0, "kind": "tempo", "name": "", "channel": -1},
+    {"index": 1, "kind": "mml", "name": "Melody", "channel": 0, "trackid": "0A"},
+    {"index": 2, "kind": "mml", "name": "Bass", "channel": 1, "trackid": "0B"}
+  ],
+  "tempo": [],
+  "lines": [
+    [1, 0, 0, 3],
+    [2, 0, 0, 4]
+  ],
+  "events": [
+    [1, 0, -1, "meta", 3, 6, 0, 3],
+    [1, 0, 0, "on", 60, 100, 0, 3],
+    [1, 47, 0, "off", 60, 0, 0, 3],
+    [1, 48, 0, "on", 62, 100, 0, 3],
+    [1, 95, 0, "off", 62, 0, 0, 3],
+    [1, 96, 0, "on", 64, 100, 0, 3],
+    [1, 143, 0, "off", 64, 0, 0, 3],
+    [2, 0, -1, "meta", 3, 4, 0, 4],
+    [2, 0, 1, "on", 48, 100, 0, 4],
+    [2, 95, 1, "off", 48, 0, 0, 4],
+    [2, 96, 1, "on", 60, 100, 0, 4],
+    [2, 191, 1, "off", 60, 0, 0, 4]
+  ]
+}

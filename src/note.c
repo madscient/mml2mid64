@@ -11,6 +11,7 @@
 #include "file.h"
 #include "charproc.h"
 #include "mmlproc.h"
+#include "dbgmap.h"
 
 struct local_note_vars {
 	int onkai;
@@ -169,6 +170,8 @@ static void putnote(int p1, int p2)
 	}
 	putc2(p1, fp2);
 	putc2(p2, fp2);
+	 /* ベロシティ0のキーオンは実際にはキーオフ */
+	dbgmap_event(p2 == 0 ? DBG_NOTEOFF : DBG_NOTEON, -1, p1, p2);
 }
 
 /* 80hでキーオフするだけの関数 */
@@ -180,6 +183,7 @@ static void putnoteoff(int p1, int p2)
 	}
 	putc2(p1, fp2);
 	putc2(p2, fp2);
+	dbgmap_event(DBG_NOTEOFF, -1, p1, p2);
 }
 
 /* a0hでポリプレッシャーを与えるだけの関数 */
@@ -191,6 +195,7 @@ static void ppres(int p1, int p2)
 	}
 	putc2(p1, fp2);
 	putc2(p2, fp2);
+	dbgmap_event(DBG_PPRES, -1, p1, p2);
 }
 
  /* mmlproc[i].stが最小となるiを返す */

@@ -1,0 +1,3 @@
+; プリプロセス段(getsp())のエラー。codeは0になる。
+A C1 o4 l4 c
+#nosuchdirective

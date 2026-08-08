@@ -22,6 +22,7 @@ add_executable(mml2mid
   src/note.c
   src/charproc.c
   src/macroexp.c
+  src/dbgmap.c
   src/file.c
 )
 
@@ -41,11 +42,51 @@ else()
     -finput-charset=UTF-8)
 endif()
 
+# ---------------------------------------------------------------------------
+# WebAssembly build (Emscripten).
+#
+# Configure with `emcmake cmake -S . -B build-wasm'.  The result is
+# build-wasm/mml2mid.mjs plus mml2mid.wasm -- an ES module exporting the
+# factory `createMml2mid()'.
+#
+# No source change is needed: src/file.c already reads the whole input into
+# memory and accumulates the output there, and everything else this program
+# touches (open/read/write/close/isatty/strdup) is in Emscripten's POSIX layer,
+# so the `#else' (POSIX) branch of compat.h is the right one here.
+#
+# The intended use is one instance per compilation, created and thrown away:
+# the program keeps a lot of global state (tstep, cur_line, trknum, the macro
+# tables) and calls exit() on error, so re-entering main() in a live instance
+# is not safe.  Hence INVOKE_RUN=0 (we call callMain() ourselves) together with
+# EXIT_RUNTIME=1 (exit() must actually tear the instance down and flush the FS).
+#
+# NODEFS is linked in because the VS Code extension host is Node: mounting the
+# real workspace makes `#include' resolve without reimplementing it in JS.
+#
+# See wasm/README.md and BUILD.md.
+# ---------------------------------------------------------------------------
+if(EMSCRIPTEN)
+  set_target_properties(mml2mid PROPERTIES SUFFIX ".mjs")
+  target_link_options(mml2mid PRIVATE
+    "-sMODULARIZE=1"
+    "-sEXPORT_ES6=1"
+    "-sEXPORT_NAME=createMml2mid"
+    "-sINVOKE_RUN=0"
+    "-sEXIT_RUNTIME=1"
+    "-sFORCE_FILESYSTEM=1"
+    "-sALLOW_MEMORY_GROWTH=1"
+    "-sEXPORTED_RUNTIME_METHODS=['FS','callMain','NODEFS']"
+    "-lnodefs.js"
+    "-lidbfs.js")
+endif()
+
 include(GNUInstallDirs)
-install(TARGETS mml2mid RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-if(NOT WIN32)
-  install(FILES src/mml2mid.1
-          DESTINATION ${CMAKE_INSTALL_MANDIR}/ja/man1)
+if(NOT EMSCRIPTEN)
+  install(TARGETS mml2mid RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+  if(NOT WIN32)
+    install(FILES src/mml2mid.1
+            DESTINATION ${CMAKE_INSTALL_MANDIR}/ja/man1)
+  endif()
 endif()
 
 # ---------------------------------------------------------------------------
@@ -59,6 +100,14 @@ endif()
 # the details, including how the baseline was validated.
 # ---------------------------------------------------------------------------
 enable_testing()
+
+# The suites all run the compiler as a plain executable, which an Emscripten
+# build is not.  Verify the WASM build with wasm/smoke.mjs instead.
+if(EMSCRIPTEN)
+  message(STATUS "mml2mid: Emscripten build -- ctest suites disabled. "
+                 "Run `node wasm/smoke.mjs build-wasm/mml2mid.mjs' instead.")
+  return()
+endif()
 
 set(_sampledir "${CMAKE_CURRENT_SOURCE_DIR}/sample")
 set(_baseline "${CMAKE_CURRENT_SOURCE_DIR}/test/baseline.sha256")
@@ -154,4 +203,46 @@ foreach(_mml IN LISTS _mml_tracknames)
                    -DSTEM=${_stem}
                    -DOUT=${CMAKE_CURRENT_BINARY_DIR}/testout/trackname-${_stem}.mid
                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/RunTrackNameTest.cmake)
+endforeach()
+
+# ---------------------------------------------------------------------------
+# Debug-map tests: compile every test/dbgmap/*.mml with and without `-g2' and
+# check (a) that the SMF is byte-identical either way -- the compatibility
+# guarantee the option rests on -- and (b) that the map matches the recorded
+# .expected file.  See doc/DEBUGMAP.md.
+# ---------------------------------------------------------------------------
+set(_dbgmapdir "${CMAKE_CURRENT_SOURCE_DIR}/test/dbgmap")
+file(GLOB _mml_dbgmap "${_dbgmapdir}/*.mml")
+
+foreach(_mml IN LISTS _mml_dbgmap)
+  get_filename_component(_stem "${_mml}" NAME_WE)
+
+  add_test(NAME dbgmap.${_stem}
+           COMMAND ${CMAKE_COMMAND}
+                   -DMML2MID=$<TARGET_FILE:mml2mid>
+                   -DMMLDIR=${_dbgmapdir}
+                   -DSTEM=${_stem}
+                   -DEXPECTED=${_dbgmapdir}/${_stem}.expected
+                   -DOUTDIR=${CMAKE_CURRENT_BINARY_DIR}/testout/dbgmap
+                   -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/RunDebugMapTest.cmake)
+endforeach()
+
+# ---------------------------------------------------------------------------
+# Diagnostics tests: compile every test/diag/*.mml with `--diag=json' and check
+# the JSON objects it writes to stderr against the recorded .expected file.
+# ---------------------------------------------------------------------------
+set(_diagdir "${CMAKE_CURRENT_SOURCE_DIR}/test/diag")
+file(GLOB _mml_diag "${_diagdir}/*.mml")
+
+foreach(_mml IN LISTS _mml_diag)
+  get_filename_component(_stem "${_mml}" NAME_WE)
+
+  add_test(NAME diag.${_stem}
+           COMMAND ${CMAKE_COMMAND}
+                   -DMML2MID=$<TARGET_FILE:mml2mid>
+                   -DMMLDIR=${_diagdir}
+                   -DSTEM=${_stem}
+                   -DEXPECTED=${_diagdir}/${_stem}.expected
+                   -DOUTDIR=${CMAKE_CURRENT_BINARY_DIR}/testout/diag
+                   -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/RunDiagTest.cmake)
 endforeach()
