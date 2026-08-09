@@ -55,6 +55,14 @@ struct {
 	char *fname;
 } ppinfo = {0, 0, NULL};
 
+ /* ppinfoを初期状態へ戻す。converttrk()がトラックごとに呼ぶ */
+void reset_ppinfo(void)
+{
+	free(ppinfo.fname);
+	ppinfo.line = ppinfo.actual_line = 0;
+	ppinfo.fname = NULL;
+}
+
 
 static int nexttrack(void);
 static void macroloop(unsigned char *, macrostruct *);

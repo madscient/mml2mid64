@@ -10,6 +10,8 @@
 
 int converttrk(void);
 void write_tmap(void);
+void reset_tmap(void); /* tick数収集パスで積んだ分を捨てる */
+extern int psw_flush_bytes; /* '=0'で状態を書き戻す1tickあたりのバイト数 */
 
 /* トラックは (従属トラック番号 0〜9) × (トラック名 NTRKNAME 通り) の組み合わせ
    だけ作られる。これにテンポマップの1本を足したものがSMFに書かれるトラック数の

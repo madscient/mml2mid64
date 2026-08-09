@@ -72,6 +72,7 @@ struct master_step {
 const char *trkname_str(int);
 void build_track_map(void);
 int resolve_src_line(int, const char **);
+void reset_ppinfo(void);
 
 #define mml_warn(i) mml_err(-(i))
 

@@ -86,6 +86,8 @@ static void smftrkend(fileptr, Fpos_t *);
 extern void write_length(long, fileptr);
 static void puttitle(const char *, const char *);
 static void analyze(void);
+static void convert_all_tracks(void);
+static void discard_first_pass(void);
 extern void clear_master_step(void);
 extern int alloc_master_step(void);
 
@@ -211,6 +213,7 @@ void diag_json(const char *severity, int code, const char *file, int line,
 	       const char *message)
 {
 	if(!diag_mode) return;
+	if(psw_collect_pass) return; /* 収集パスの分は2パス目で出るので黙る */
 
 	fprintf(STDERR, "{\"severity\": ");
 	json_write_string(STDERR, severity);
@@ -621,7 +624,6 @@ static void puttitle(const char *title, const char *copyright)
 	fputs2(copyright, fp3);
 }
 
-extern int ichi; /* =1 があったかどうかのフラグ */
 extern int tempo_master;
 
 extern int alloc_tmap(void), alloc_master_step(void),
@@ -638,11 +640,51 @@ extern int alloc_tmap(void), alloc_master_step(void),
   fp0,fp3と同様に使える．fp1, fp2は，ffree(fp2)などとやって，自分でメモリを
   解放しないといけない．
   */
+ /* 全トラックをコンパイルしてfp2へ書く。analyze()から2回呼ばれる */
+static void convert_all_tracks(void)
+{
+	for(talf = 0; talf < NTRKNAME; talf++){
+		if (talf>0 && track_map[talf]==0 && track_map[TRKMAP_WILD]==0) continue;
+		tnum=0; /* 主トラック0[A〜Z][0〜9]をまずチェックする */
+		clear_master_step();
+		fseek2(fp1, 0L, SEEK_SET); /* ファイルの先頭に移動 */
+		if(converttrk() != -1){ /* 主トラックが存在する場合 */
+			smftrkend(fp2, &trksize); /* トラックの終了イベント出力 */
+			trktop[trknum] = trksize + 4; /* ヘッダの直後の位置 */
+			for (tnum=1;tnum < 10 ; tnum++) {
+				if(track_map[tnum*TRKMAP_STRIDE+talf]==0 &&
+				   track_map[tnum*TRKMAP_STRIDE+TRKMAP_WILD]==0)
+					continue; /* 従属トラックが存在しない */
+				fseek2(fp1, 0L, SEEK_SET); /* ファイルの先頭に移動 */
+				if(converttrk() != -1){
+					smftrkend(fp2, &trksize); /* トラックの終了イベント出力 */
+					trktop[trknum] = trksize + 4; /* ヘッダの直後の位置 */
+				}
+			}
+		}
+	}
+}
+
+ /* tick数収集パスの結果を捨てて、本番のコンパイルに備える。
+    集めたpsw_flush_ticks[]だけを残す */
+static void discard_first_pass(void)
+{
+	ffree(fp2);
+	if((fp2 = fmalloc()) == NULL){
+		msg_printf("ERROR! Cannot allocate memory (for fp2)\n");
+		text_cat(Msg);
+		remove_file_and_owari1();
+	}
+	trknum = 0;
+	trksize = 0;
+	reset_tmap();
+	dbgmap_enable(dbgmap_level);
+}
+
 static void analyze(void)
 {
 	timebase = 48;		/* タイムベース初期値 */
 	trknum = 0;		/* トラック数 */
-	ichi = 0;
 
 	/* alloc data area */
 	if(alloc_tmap() < 0 || alloc_master_step() < 0 ||
@@ -661,6 +703,15 @@ static void analyze(void)
 
 	getsp(NULL, fp0, fp1);	/* #コマンドの取得 fp0 -> fp1 に書き込まれる */
 	fclose2(fp0);		/* 元のMMLファイル(fp0)は閉じる */
+
+	 /* '#pswflush'で明示されていなければ、1tickあたりに送れるバイト数を
+	    timebaseから見積もる。MIDIは31250bps・10bit/バイトなので毎秒3125
+	    バイト、テンポ120では1tickが 500/timebase ミリ秒なので
+	    3.125 * 500 / timebase = 1562 / timebase バイトになる */
+	if(psw_flush_bytes <= 0){
+		psw_flush_bytes = 1562 / timebase;
+		if(psw_flush_bytes < 1) psw_flush_bytes = 1;
+	}
 
 	 /* 「${名前}」「${名前:引数}」の展開。1入力行＝1出力行なので行番号は
 	    ずれない。「$a」は手を付けずに scanmacro() へ渡す */
@@ -691,26 +742,19 @@ static void analyze(void)
 
 	build_track_map(); /* どのトラックが存在するかを1回の走査で調べておく */
 
-	for(talf = 0; talf < NTRKNAME; talf++){
-		if (talf>0 && track_map[talf]==0 && track_map[TRKMAP_WILD]==0) continue;
-		tnum=0; /* 主トラック0[A〜Z][0〜9]をまずチェックする */
-		clear_master_step();
-		fseek2(fp1, 0L, SEEK_SET); /* ファイルの先頭に移動 */
-		if(converttrk() != -1){ /* 主トラックが存在する場合 */
-			smftrkend(fp2, &trksize); /* トラックの終了イベント出力 */
-			trktop[trknum] = trksize + 4; /* ヘッダの直後の位置 */
-			for (tnum=1;tnum < 10 ; tnum++) {
-				if(track_map[tnum*TRKMAP_STRIDE+talf]==0 &&
-				   track_map[tnum*TRKMAP_STRIDE+TRKMAP_WILD]==0)
-					continue; /* 従属トラックが存在しない */
-				fseek2(fp1, 0L, SEEK_SET); /* ファイルの先頭に移動 */
-				if(converttrk() != -1){
-					smftrkend(fp2, &trksize); /* トラックの終了イベント出力 */
-					trktop[trknum] = trksize + 4; /* ヘッダの直後の位置 */
-				}
-			}
-		}
-	}
+	 /* '=1'の区間で変更された状態は'=0'で書き戻すが、それを全部同じ
+	    ステップタイムに置くと音源に送りきれないので、1tickあたり
+	    psw_flush_bytesバイトまでに分けてtickを進めながら書く。
+	    進めるtick数がトラックによって違うと再開位置がずれてしまうので、
+	    まず出力を捨てるパスを1回回して各'=0'に必要なtick数の最大値を
+	    集め、本番ではどのトラックもその数だけ進める。 */
+	psw_collect_pass = 1;
+	dbgmap_enable(0);	/* 収集パスの分をマップに混ぜない */
+	convert_all_tracks();
+	psw_collect_pass = 0;
+	discard_first_pass();
+
+	convert_all_tracks();
 
 	write_tmap();
 	smftrkend(fp3, &tposize); /* テンポトラックの終了イベント出力 */
@@ -1068,6 +1112,14 @@ static void getsp(char *curfile, fileptr fpi, fileptr fpo)
 				if(!strncmp(p, "sysexsinglequote", len)){
 					sysexsinglequote =
 					  getbooldirective(q, "sysexsinglequote", &lbuf);
+					putc2('\n', fpo);
+				} else
+				if(!strncmp(p, "pswflush", len)){
+					 /* '=0'で状態を書き戻すときの、1tick
+					    あたりのバイト数の上限 */
+					psw_flush_bytes =
+					  getintdirective(q, "pswflush", &lbuf,
+							  1, INT_MAX);
 					putc2('\n', fpo);
 				} else
 				if(!strncmp(p, "bendrange", len)){

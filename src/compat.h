@@ -115,6 +115,13 @@ GLOBAL char text[8192];  /* accumulated, flushed by msg_flush() */
 GLOBAL char Msg[1024];   /* scratch for one formatted line; a title may be
                             up to 256 bytes, so 256 is not enough */
 
+/* Non-zero while the first of the two compile passes is running.  That pass
+   only measures how many ticks each `=0' needs to write the state back that
+   the `=1' region changed (see psw_flush() in mmlproc.c); its output is
+   thrown away, so its progress lines and warnings must stay quiet -- they are
+   printed by the second pass.  Errors clear it so they still get reported. */
+GLOBAL int psw_collect_pass;
+
 #undef GLOBAL
 
 /* Format into Msg[] without ever overrunning it.  Replaces the old
@@ -126,8 +133,10 @@ GLOBAL char Msg[1024];   /* scratch for one formatted line; a title may be
    `S' (status dump) commands. */
 static inline void text_cat(const char *s)
 {
-	size_t used = strlen(text);
+	size_t used;
 
+	if (psw_collect_pass) return; /* measuring pass: stay quiet */
+	used = strlen(text);
 	if (used + 1 < sizeof(text))
 		strncat(text + used, s, sizeof(text) - used - 1);
 }
