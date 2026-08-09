@@ -108,7 +108,6 @@ int codei[KIND_MAX][5];  /* Iコマンド保存用 */
 static int rpn_para;
 static int nrpn_para;
 int psw; /* '='スイッチ */
-int ichi; /* =1 があったかどうかのフラグ */
 static int psw_line; /* 最後に実行した'='コマンドの行番号(tmapのソート用) */
 static int prog; /* プログラムチェンジ */
 static int bs1; /* bank select */
@@ -194,6 +193,31 @@ extern long first_F[];
 extern long last_F[];
 extern long first_I[];
 extern long last_I[];
+
+ /* '=1'区間で保留する状態変更の分類。実体はconverttrk()の直前にある */
+			/* keyの上位が種別、下位が対象(CC番号やRPNアドレス) */
+#define PSWGRP(key)	((key) & 0x70000)
+#define PSWGRP_RAW	0x00000	/* EX/EE/mv/mt。重複除去しない */
+#define PSWGRP_CC	0x10000
+#define PSWGRP_PROG	0x20000	/* バンクセレクト+プログラムチェンジ */
+#define PSWGRP_BEND	0x30000
+#define PSWGRP_CPRES	0x40000
+#define PSWGRP_RPN	0x50000
+#define PSWGRP_NRPN	0x60000
+
+#define PSWKEY_RAW	PSWGRP_RAW
+#define PSWKEY_CC(n)	(PSWGRP_CC + (n))
+#define PSWKEY_PROG	PSWGRP_PROG
+#define PSWKEY_BEND	PSWGRP_BEND
+#define PSWKEY_CPRES	PSWGRP_CPRES
+#define PSWKEY_RPN(m,l)	 (PSWGRP_RPN + ((m) << 8) + (l))
+#define PSWKEY_NRPN(m,l) (PSWGRP_NRPN + ((m) << 8) + (l))
+
+static void psw_put(int, int, int, int);
+static void psw_put_prog(int);
+static void psw_put_raw(const unsigned char *, int);
+static void psw_flush(void);
+static void psw_clear(void);
 
 int alloc_tmap(void)
 {
@@ -307,6 +331,8 @@ static void put_cntchange(int p1, int p2, long l)
 		if(check_cntchange(p1, p2) == -1) return;
 		put_cntchange0(p1, p2);
 		write_length(l, fp2);
+	}else{
+		psw_put(PSWKEY_CC(p1), p1, p2, 0); /* '=0'まで保留 */
 	}
 }
 
@@ -349,6 +375,8 @@ static void put_bend(int p, long l)
 		if(check_bendchange(p) == -1) return;
 		put_bend0(p);
 		write_length(l, fp2);
+	}else{
+		psw_put(PSWKEY_BEND, p, 0, 0); /* '=0'まで保留 */
 	}
 }
 
@@ -381,6 +409,8 @@ static void write_rpn(int tmsb, int tlsb, int tdat)
 		nrpn_para = -1;
 		put_cntchange0(6, tdat);
 		write_length(0, fp2);
+	}else{
+		psw_put(PSWKEY_RPN(tmsb, tlsb), tmsb, tlsb, tdat); /* 保留 */
 	}
 }
 
@@ -390,6 +420,8 @@ static void write_nrpn(int tmsb, int tlsb, int tdat)
 	if(psw == 0){
 		write_nrpn0(tmsb, tlsb, tdat);
 		write_length(0, fp2);
+	}else{
+		psw_put(PSWKEY_NRPN(tmsb, tlsb), tmsb, tlsb, tdat); /* 保留 */
 	}
 }
 
@@ -408,6 +440,256 @@ static void write_nrpn0(int tmsb, int tlsb, int tdat)
 	}
 	rpn_para = -1;
 	put_cntchange0(6, tdat);
+}
+
+/* '=1'区間で保留した状態変更 -----------------------------------------------
+
+   '=1'の間は音符と休符を飛ばすのでステップタイムが1つも進まない。この間に
+   書かれた状態変更(CC、ベンド、RPN/NRPN、バンク/プログラムチェンジ、
+   チャンネルプレッシャー、エクスクルーシブ)を、その場では出力せずにここへ
+   溜めておき、'=0'の時点でまとめて書き出す。
+
+   対象ごとに最後の値だけを残す(同じCCを何度書き換えても最後の1つだけ)。
+   エクスクルーシブと'EE'の生バイト列は何をするものか分からないので、重複
+   除去せずに書かれた順で全部保持する。
+
+   全部を同じステップタイムに置くと音源に送りきれないので、1tickあたりの
+   バイト数の上限(psw_flush_bytes)まで詰めては1tick進める、を繰り返す。
+   進めるtick数はトラックによって違うが、それをそのままにすると再開位置が
+   トラック間でずれるので、全トラックで同じtick数だけ進める(psw_flush_ticks。
+   最大値の収集はanalyze()の1パス目が行う)。 */
+
+struct psw_event {
+	int key;
+	int d1, d2, d3;	/* 意味はkeyによる。PSWKEY_RAWでは未使用 */
+	int off, len;	/* PSWKEY_RAWのときだけ: psw_pool[]内の位置と長さ */
+};
+static struct psw_event *psw_ev;
+static int psw_ev_ptr, psw_ev_amount;
+static unsigned char *psw_pool;
+static int psw_pool_ptr, psw_pool_amount;
+
+int psw_flush_bytes;		/* 1tickあたりに詰め込むバイト数の上限 */
+static int *psw_flush_ticks;	/* 行番号→その'=0'で進めるtick数 */
+static int psw_flush_ticks_amount;
+
+/* psw_flush_ticks[line]へ安全に触るためのアクセサ */
+static int *psw_ticks_slot(int line)
+{
+	if(line < 0) line = 0;
+	if(line >= psw_flush_ticks_amount){
+		int i, prev = psw_flush_ticks_amount;
+
+		psw_flush_ticks_amount = line + 1024;
+		psw_flush_ticks = realloc(psw_flush_ticks,
+			psw_flush_ticks_amount * sizeof(*psw_flush_ticks));
+		if(psw_flush_ticks == NULL) mml_err(61);
+		for(i = prev; i < psw_flush_ticks_amount; i++)
+			psw_flush_ticks[i] = 0;
+	}
+	return &psw_flush_ticks[line];
+}
+
+/* 保留リストを空にする(トラックの切り替え時とフラッシュ後) */
+static void psw_clear(void)
+{
+	psw_ev_ptr = 0;
+	psw_pool_ptr = 0;
+}
+
+/* keyに対応する枠を返す。新しく作った場合は*is_newに1を入れる */
+static struct psw_event *psw_slot(int key, int *is_new)
+{
+	int i;
+
+	if(is_new != NULL) *is_new = 0;
+	if(key != PSWKEY_RAW){ /* 同じ対象が既にあれば上書きする */
+		for(i = 0; i < psw_ev_ptr; i++)
+			if(psw_ev[i].key == key) return &psw_ev[i];
+	}
+	if(psw_ev_ptr >= psw_ev_amount){
+		psw_ev_amount = psw_ev_ptr + 256;
+		psw_ev = realloc(psw_ev, psw_ev_amount * sizeof(*psw_ev));
+		if(psw_ev == NULL) mml_err(61);
+	}
+	if(is_new != NULL) *is_new = 1;
+	psw_ev[psw_ev_ptr].key = key;
+	psw_ev[psw_ev_ptr].d1 = psw_ev[psw_ev_ptr].d2 = psw_ev[psw_ev_ptr].d3 = 0;
+	psw_ev[psw_ev_ptr].off = psw_ev[psw_ev_ptr].len = 0;
+	return &psw_ev[psw_ev_ptr++];
+}
+
+static void psw_put(int key, int d1, int d2, int d3)
+{
+	struct psw_event *e = psw_slot(key, NULL);
+
+	e->d1 = d1; e->d2 = d2; e->d3 = d3;
+}
+
+/* バンク/プログラムチェンジ。progが負なら「Hでバンクだけ変わった」の意味で、
+   既に記録済みのプログラム番号があればそれを保つ */
+static void psw_put_prog(int progno)
+{
+	int is_new;
+	struct psw_event *e = psw_slot(PSWKEY_PROG, &is_new);
+
+	if(is_new) e->d1 = -1;	/* まだ@が来ていない */
+	if(progno >= 0) e->d1 = progno;
+	e->d2 = bs1;
+	e->d3 = bs2;
+}
+
+/* EX/EE/mv/mt の生バイト列を そのまま順番に保持する */
+static void psw_put_raw(const unsigned char *b, int n)
+{
+	struct psw_event *e;
+
+	if(psw_pool_ptr + n > psw_pool_amount){
+		psw_pool_amount = psw_pool_ptr + n + 4096;
+		psw_pool = realloc(psw_pool, (size_t)psw_pool_amount);
+		if(psw_pool == NULL) mml_err(61);
+	}
+	e = psw_slot(PSWKEY_RAW, NULL);
+	e->off = psw_pool_ptr;
+	e->len = n;
+	memcpy(psw_pool + psw_pool_ptr, b, (size_t)n);
+	psw_pool_ptr += n;
+}
+
+/* 保留イベント1個が消費するバイト数。ランニングステータスの有無で変わるので
+   現在のrunを見て数える。psw_emit()の数え方と一致していること */
+static int psw_cost(const struct psw_event *e)
+{
+	switch(PSWGRP(e->key)){
+	case PSWGRP_CC:	   return (run == 0xb) ? 2 : 3;
+	case PSWGRP_PROG:  return ((run == 0xb) ? 2 : 3) + 2 +
+				  (e->d1 >= 0 ? 2 : 0);
+	case PSWGRP_BEND:  return (run == 0xe) ? 2 : 3;
+	case PSWGRP_CPRES: return (run == 0xd) ? 1 : 2;
+	case PSWGRP_RPN:
+	case PSWGRP_NRPN:  return ((run == 0xb) ? 2 : 3) + 4;
+	default:	   return e->len;	/* PSWGRP_RAW */
+	}
+}
+
+/* 保留イベントを1個書き出し、消費したバイト数を返す。
+   ランニングステータスはput_cntchange0()などが面倒を見るので、
+   バイト数もrunを見て数える */
+static int psw_emit(const struct psw_event *e)
+{
+	int n = 0, i;
+
+	switch(PSWGRP(e->key)){
+	case PSWGRP_CC:
+		n = (run == 0xb) ? 2 : 3;
+		put_cntchange0(e->d1, e->d2);
+		 /* 後で同じ値を書いたときに省略されるよう、重複除去の
+		    状態も進めておく */
+		(void)check_cntchange(e->d1, e->d2);
+		break;
+	case PSWGRP_PROG:
+		n = (run == 0xb) ? 2 : 3;
+		put_cntchange0(0, e->d2);
+		write_length(0, fp2);
+		n += 2;
+		put_cntchange0(32, e->d3);
+		if(e->d1 >= 0){
+			write_length(0, fp2);
+			n += (run == 0xc) ? 1 : 2;
+			if(run != 0xc){
+				putc2(0xc0 + cur_ch, fp2);
+				run = 0xc;
+			}
+			putc2(e->d1, fp2);
+			dbgmap_event(DBG_PROG, -1, e->d1, 0);
+		}
+		break;
+	case PSWGRP_BEND:
+		n = (run == 0xe) ? 2 : 3;
+		put_bend0(e->d1);
+		(void)check_bendchange(e->d1);
+		break;
+	case PSWGRP_CPRES:
+		n = (run == 0xd) ? 1 : 2;
+		put_cpres0(e->d1);
+		break;
+	case PSWGRP_RPN:
+		n = (run == 0xb) ? 2 : 3;
+		put_cntchange0(101, e->d1);
+		write_length(0, fp2);
+		put_cntchange0(100, e->d2);
+		write_length(0, fp2);
+		put_cntchange0(6, e->d3);
+		n += 4;
+		rpn_para = e->d1 * 256 + e->d2;
+		nrpn_para = -1;
+		break;
+	case PSWGRP_NRPN:
+		n = (run == 0xb) ? 2 : 3;
+		put_cntchange0(99, e->d1);
+		write_length(0, fp2);
+		put_cntchange0(98, e->d2);
+		write_length(0, fp2);
+		put_cntchange0(6, e->d3);
+		n += 4;
+		nrpn_para = e->d1 * 256 + e->d2;
+		rpn_para = -1;
+		break;
+	default: /* PSWGRP_RAW */
+		for(i = 0; i < e->len; i++) putc2(psw_pool[e->off + i], fp2);
+		n = e->len;
+		 /* エクスクルーシブはランニングステータスを打ち切る */
+		run = 0;
+		dbgmap_event(DBG_SYSEX, -1, e->len, 0);
+		break;
+	}
+	return n;
+}
+
+/* '=0'で保留イベントをまとめて書き出す。
+   直前の可変長(次のイベントまでの間隔)は既に書かれているので、最初の1個は
+   そのまま書き、以降は自分でwrite_length()する。 */
+static void psw_flush(void)
+{
+	int i, budget, used = 0, want;
+
+	want = *psw_ticks_slot(psw_line);
+
+	if(psw_ev_ptr == 0){
+		if(want > 0){
+			 /* 出すものが無くても、他のトラックと足並みを
+			    揃えるために同じだけtickを進める。直前に書いた
+			    可変長を書き直して延ばす */
+			tstep -= lastlen;
+			fsetpos2(fp2, &lastlenpos);
+			write_length(lastlen + want, fp2);
+		}
+		return;
+	}
+
+	budget = psw_flush_bytes;
+	for(i = 0; i < psw_ev_ptr; i++){
+		if(i > 0){
+			if(budget < psw_cost(&psw_ev[i])){ /* 次のtickへ送る */
+				write_length(1, fp2);
+				used++;
+				budget = psw_flush_bytes;
+			}else{
+				write_length(0, fp2);
+			}
+		}
+		budget -= psw_emit(&psw_ev[i]);
+	}
+	 /* 残りは次のイベントまでの間隔として書く。ここまでで used tick
+	    使ったので、合計が want tick になるように埋める */
+	write_length(want > used ? want - used : 0, fp2);
+
+	if(psw_collect_pass){ /* 収集パス: 必要だったtick数を記録する */
+		int *slot = psw_ticks_slot(psw_line);
+
+		if(*slot < used) *slot = used;
+	}
+	psw_clear();
 }
 
 /*
@@ -433,6 +715,11 @@ int converttrk(void)
 
 	cur_line = cur_cmd_line = 1; /* 行番号 = 1 から読み始める */
 	cur_cmd_file = 0;
+	 /* 「# 行番号 "ファイル名"」で覚えた対応も捨てる。トラックごとに
+	    ファイルの先頭から読み直すので、前のトラック(あるいはtick数
+	    収集パス)の分が残っていると resolve_src_line() が最初のマーカに
+	    出会うまで狂った行番号を返してしまう */
+	reset_ppinfo();
 	kloop_ptr = 0; /* ループネスト数 = 0 */
 	cur_ch = 0; /* 現在処理中のMIDIチャンネル */
 	run = 0; /* ランニングステータス初期化 */
@@ -471,11 +758,8 @@ int converttrk(void)
 	rpn_para = -1;
 	nrpn_para = -1;
 	psw = 0; /* '='スイッチＯＦＦ */
-	ichi = 0; /* まだ'=1'は現れていない */
-	 /* ichiはトラック毎に初期化しないと、行中に'=1'を書いたトラックの
-	    フラグが次のトラックへ持ち越され、'=1'を通っていないトラックが
-	    '=0'の所でプログラムチェンジなどを余計に出力してしまう */
 	psw_line = 0; /* まだ'='コマンドを1つも通っていない */
+	psw_clear(); /* '=1'区間の保留イベントを空にする */
 	prog = -1;
 	bs1 = bs2 = 0;
 	for(i = 0; i < KIND_MAX; i++){
@@ -777,31 +1061,14 @@ static void setpsw(void)
 		else psw = num;
 	}
 	if(psw == 1){
-		ichi = 1;
-		prog = -1;
 		write_keyproc2();
 		write_restofmmlproc();
 		return;
-	}else if(ichi == 1){
-		ichi = 0;
-		if(prog != -1){ /* 途中でプログラムチェンジが１個以上あった場合 */
-			put_cntchange0(0, bs1);
-			write_length(0, fp2);
-			put_cntchange0(32, bs2);
-			write_length(0, fp2);
-			/* if(run != 0xc){} ランニングステータスは無視する */
-			putc2(0xc0 + cur_ch, fp2);
-			run= 0xc;
-			putc2(prog, fp2);
-			dbgmap_event(DBG_PROG, -1, prog, 0);
-			write_length(0, fp2);
-		}
-		if(mod_on != -1) put_mod(mod_on);
-		if(volume != -1) put_vol(volume);
-		if(panpot != -1) put_panpot(panpot);
-		if(expression != -1) put_expr(expression);
-		if(cpres != -1) put_cpres(cpres);
 	}
+	 /* '=1'の区間で保留した状態変更をまとめて書き出す。
+	    保留が空でも、他のトラックと再開位置を揃えるためにpsw_flush()は
+	    必ず通す(そのトラックだけtickを進めないとずれてしまう) */
+	psw_flush();
 }
 
 /* mmlを1トラック分変換し終えた直後に，
@@ -1010,6 +1277,12 @@ static void tmap_realloc(void) /* Add Nide */
 	}
 }
 
+ /* tick数収集パスで積んだテンポマップを捨てる(analyze()から呼ばれる) */
+void reset_tmap(void)
+{
+	tmap_ptr = 0;
+}
+
 static void add_tmap(int map, int num, long step)
 {
 	tmap[tmap_ptr].index = tmap_ptr;
@@ -1135,6 +1408,8 @@ static void cpres0(void)
 		putc2(cpres, fp2);
 		dbgmap_event(DBG_CPRES, -1, cpres, 0);
 		write_length(0, fp2);
+	}else{
+		psw_put(PSWKEY_CPRES, cpres, 0, 0); /* '=0'まで保留 */
 	}
 }
 
@@ -1287,6 +1562,8 @@ static void bankselect(void)
 		write_length(0, fp2);
 		put_cntchange0(32, bs2);
 		write_length(0, fp2);
+	}else{
+		psw_put_prog(-1); /* バンクだけ更新して '=0' まで保留 */
 	}
 }
 
@@ -1366,6 +1643,8 @@ static void progchange(void)
 			put_cntchange0(32, bs2);
 			write_length(0, fp2);
 			put_progchange();
+		}else{
+			psw_put_prog(prog); /* '=0' まで保留 */
 		}
 		return;
 	}
@@ -1379,6 +1658,7 @@ static void progchange(void)
 	} else mml_err(23);
 	/* prog &= ~0x80; …不要? */
 	if(psw == 0) put_progchange();
+	else psw_put_prog(prog); /* '=0' まで保留 */
 }
 
 /* Eコマンドの処理 */
@@ -1769,6 +2049,27 @@ static void getexclusive(int x)
 		bit_ptr=0;
 		bit_temp=0;
 	}
+	if(psw != 0){
+		 /* '=1'の区間なので、ここでは出さずに '=0' まで保留する。
+		    中身が何をするものか分からないので、重複除去はせずに
+		    生バイト列のまま順番に溜める */
+		unsigned char raw[EX_MAX + 3];
+		int n = 0;
+
+		if(x == 0){
+			raw[n++] = 0xf0;
+			if(ex_pnt > 127){
+				raw[n++] = (unsigned char)(ex_pnt / 128 + 128);
+				raw[n++] = (unsigned char)(ex_pnt % 128);
+			}else{
+				raw[n++] = (unsigned char)ex_pnt;
+			}
+		}
+		for(i = 0; i < ex_pnt; i++)
+			raw[n++] = (unsigned char)exclusive[i];
+		psw_put_raw(raw, n);
+		return;
+	}
 	if(x == 0){
 		putc2(0xf0, fp2);
 		if (ex_pnt>127) {
@@ -2142,6 +2443,16 @@ static void mastervolume(void)
 
 	num = xget(&i);
 	if(i == -2 || num < 0 || 127 < num) mml_err(80);
+	if(psw != 0){ /* '=1'の区間なので '=0' まで保留する */
+		static const unsigned char tmpl[] = {
+			0xf0, 7, 0x7f, 0x7f, 0x04, 0x01, 0, 0, 0xf7 };
+		unsigned char raw[sizeof(tmpl)];
+
+		memcpy(raw, tmpl, sizeof(tmpl));
+		raw[7] = (unsigned char)num;
+		psw_put_raw(raw, (int)sizeof(raw));
+		return;
+	}
 	putc2(0xf0, fp2);
 	putc2(7, fp2);
 	putc2(0x7f, fp2);	/* Universal Real Time */
@@ -2165,6 +2476,17 @@ static void masterfinetune(void)
 	num = xget(&i);
 	if(i == -2 || num < -8192 || 8191 < num) mml_err(81);
 	num += 0x2000;
+	if(psw != 0){ /* '=1'の区間なので '=0' まで保留する */
+		static const unsigned char tmpl[] = {
+			0xf0, 7, 0x7f, 0x7f, 0x04, 0x03, 0, 0, 0xf7 };
+		unsigned char raw[sizeof(tmpl)];
+
+		memcpy(raw, tmpl, sizeof(tmpl));
+		raw[6] = (unsigned char)(num & 0x7f);
+		raw[7] = (unsigned char)((num >> 7) & 0x7f);
+		psw_put_raw(raw, (int)sizeof(raw));
+		return;
+	}
 	putc2(0xf0, fp2);
 	putc2(7, fp2);
 	putc2(0x7f, fp2);		/* Universal Real Time */
@@ -2559,6 +2881,9 @@ void mml_err(int i)
 	const char *base = i > 0 ? err_msgs[i] : warn_msgs[-i];
 
 	if(i > 0){
+		 /* エラーは収集パスでも必ず出す(どうせここで打ち切るので
+		    2パス目に持ち越しても二重には出ない) */
+		psw_collect_pass = 0;
 		text_cat("ERROR!  ");
 		text_cat(err_msgs[i]);
 	} else {
